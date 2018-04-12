@@ -14,7 +14,7 @@ fn run() -> Result<()> {
     let ctx = sdl2::init().map_err(err_msg)?;
     let video = ctx.video().map_err(err_msg)?;
 
-    let window = video.window("rust-sdl2 demo: Video", 800, 600)
+    let window = video.window("Fractal", 800, 600)
         .position_centered()
         .build()?;
 
@@ -25,20 +25,17 @@ fn run() -> Result<()> {
 
     let mut event_pump = ctx.event_pump().map_err(err_msg)?;
 
-    'running:
     loop {
         for evt in event_pump.poll_iter() {
             match evt {
                 Event::Quit {..} | Event::KeyDown { keycode: Some(Keycode::Escape), .. } => {
-                    break 'running;
+                    return Ok(());
                 },
                 _ => {},
             }
         }
         std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 60));
     }
-
-    Ok(())
 }
 
 fn main() {
