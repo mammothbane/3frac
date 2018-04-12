@@ -2,6 +2,8 @@
 name = "fractal"
 version = "0.1.0"
 authors = ["Nathan Perry <avaglir@gmail.com>"]
+build = "build.rs"
 
 [dependencies]
-sdl2 = { version = "0.31", features = ["bundled"] }
+sdl2 = "0.31"
+failure = "0.1"
