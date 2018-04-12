@@ -11,19 +11,15 @@ use sdl2::keyboard::Keycode;
 pub(crate) type Result<T> = std::result::Result<T, failure::Error>;
 
 fn run() -> Result<()> {
-
     let ctx = sdl2::init().map_err(err_msg)?;
-
     let video = ctx.video().map_err(err_msg)?;
-
 
     let window = video.window("rust-sdl2 demo: Video", 800, 600)
         .position_centered()
-        .opengl()
         .build()?;
 
     let mut canvas = window.into_canvas().build()?;
-    canvas.set_draw_color(Color::RGB(255, 0, 0));
+    canvas.set_draw_color(Color::RGB(60, 60, 60));
     canvas.clear();
     canvas.present();
 
@@ -46,8 +42,6 @@ fn run() -> Result<()> {
 }
 
 fn main() {
-    println!("starting");
-
     match run() {
         Ok(_) => {},
         Err(e) => {
