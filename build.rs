@@ -5,8 +5,9 @@ fn main() {
     let target = env::var("TARGET").unwrap();
     if target.contains("pc-windows") {
         let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
-        let mut lib_dir = manifest_dir.clone();
-        let mut dll_dir = manifest_dir.clone();
+
+        let mut lib_dir = manifest_dir.join("lib");
+        let mut dll_dir = lib_dir.clone();
 
         if target.contains("msvc") {
             lib_dir.push("msvc");
