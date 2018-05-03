@@ -1,48 +1,62 @@
-extern crate sdl2;
-#[macro_use] extern crate failure;
+extern crate kiss3d;
+extern crate nalgebra as na;
+extern crate failure;
+extern crate glfw;
+#[macro_use] extern crate itertools;
 
-use std::time::Duration;
-
-use failure::err_msg;
-use sdl2::pixels::Color;
-use sdl2::event::Event;
-use sdl2::keyboard::Keycode;
+use kiss3d::{
+    window::Window,
+    light::Light,
+    camera::ArcBall,
+};
+use na::{UnitQuaternion, Vector3, Point3};
 
 pub(crate) type Result<T> = std::result::Result<T, failure::Error>;
 
 fn run() -> Result<()> {
-    let ctx = sdl2::init().map_err(err_msg)?;
-    let video = ctx.video().map_err(err_msg)?;
+    let mut window = Window::new("fractal");
+//    let mut c = window.add_cube(1.0, 1.0, 1.0);
 
-    let window = video.window("Fractal", 800, 600)
-        .position_centered()
-        .build()?;
+    let box_color = Point3::new(0.8, 0.8, 0.8);
 
-    let mut canvas = window.into_canvas().build()?;
-    canvas.set_draw_color(Color::RGB(60, 60, 60));
-    canvas.clear();
-    canvas.present();
+    let points = [
+        Point3::new(0.5, 0.5, 0.5),
+        Point3::new(-0.5, 0.5, 0.5),
+        Point3::new(0.5, -0.5, 0.5),
+        Point3::new(0.5, 0.5, -0.5),
+        Point3::new(-0.5, -0.5, 0.5),
+        Point3::new(-0.5, 0.5, -0.5),
+        Point3::new(0.5, -0.5, -0.5),
+        Point3::new(-0.5, -0.5, -0.5),
+    ];
 
-    let mut event_pump = ctx.event_pump().map_err(err_msg)?;
+    let lines = iproduct!(points.iter(), points.iter())
+        .filter(|(p1, p2)| (*p1 - *p2).norm() == 1.0)
+        .collect::<Vec<_>>();
 
-    loop {
-        for evt in event_pump.poll_iter() {
-            match evt {
-                Event::Quit {..} | Event::KeyDown { keycode: Some(Keycode::Escape), .. } => {
-                    return Ok(());
-                },
-                _ => {},
-            }
-        }
-        std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 60));
+    window.set_light(Light::StickToCamera);
+
+    let rot = UnitQuaternion::from_axis_angle(&Vector3::y_axis(), 0.014);
+
+    while window.render() {
+        use glfw::WindowEvent::*;
+
+        window.events().iter().for_each(|evt| match evt.value {
+
+            _ => {},
+        });
+
+        lines.iter().for_each(|(p1, p2)| window.draw_line(p1, p2, &box_color));
     }
+
+    Ok(())
 }
 
 fn main() {
     match run() {
         Ok(_) => {},
         Err(e) => {
-            println!("error running: {}", e);
+            println!("error: {}", e);
         },
     }
 }

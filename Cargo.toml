@@ -2,8 +2,10 @@
 name = "fractal"
 version = "0.1.0"
 authors = ["Nathan Perry <avaglir@gmail.com>"]
-build = "build.rs"
 
 [dependencies]
-sdl2 = "0.31"
+kiss3d = "0.13"
 failure = "0.1"
+nalgebra = "0.14"
+glfw = "0.19"
+itertools = "0.7"
