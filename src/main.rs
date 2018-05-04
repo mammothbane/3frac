@@ -71,10 +71,8 @@ fn run() -> Result<()> {
 
     let origin_cube = Cuboid3::new(Vector3::new(0.5, 0.5, 0.5));
 
-    let non_collision_color = Point3::new(0.8, 0.8, 0.8);
+    let non_collision_color = Point3::new(1.0, 1.0, 1.0);
     let collision_color = Point3::new(1.0, 0.7, 0.7);
-
-    let mut origin_box_color = &non_collision_color;
 
     let mut components = Vec::<Component>::new();
 
@@ -136,25 +134,31 @@ fn run() -> Result<()> {
 
         let ray = Ray3::new(loc, dir);
 
-        let origin_toi = origin_cube.toi_with_ray(&Id::new(), &ray, true);
-
         use std::cmp::Ordering;
-        let comp_toi = components.iter()
-            .map(|comp| (comp, comp.cuboid().toi_with_ray(&comp.cuboid_transform(), &ray, true)))
-            .filter(|(_, intersect)| intersect.is_some())
-            .map(|(comp, intersect)| (comp, intersect.unwrap()))
-            .min_by(|x, y| x.1.partial_cmp(&y.1).unwrap_or(Ordering::Less) );
+        let toi = components.iter()
+            .enumerate()
+            .filter_map(|(idx, comp)| comp.cuboid().toi_with_ray(&comp.cuboid_transform(), &ray, true).map(|x| (idx, x)))
+            .min_by(|x, y| x.1.partial_cmp(&y.1).unwrap_or(Ordering::Less));
 
-        match origin_toi {
-            Some(origin_toi) => {
-                if comp_toi.is_none() || comp_toi.unwrap().1 >= origin_toi { // we hit the origin box first
-                    origin_box_color = &collision_color;
-                } else {
-                    origin_box_color = &non_collision_color;
+        match toi {
+            Some((idx, _)) => {
+                components[idx].color = collision_color.coords.clone();
+                components[idx].apply();
+
+                for i in 0..components.len() {
+                    if i == idx {
+                        continue;
+                    }
+
+                    components[i].color = non_collision_color.coords.clone();
+                    components[i].apply();
                 }
             },
             None => {
-                origin_box_color = &non_collision_color;
+                components.iter_mut().for_each(|comp| {
+                    comp.color = non_collision_color.coords.clone();
+                    comp.apply();
+                });
             },
         }
 
@@ -162,7 +166,7 @@ fn run() -> Result<()> {
             window.draw_line(p1, p2, &Point3::new(1.0, 1.0, 1.0));
         });
 
-        BOX_EDGES.iter().for_each(|(p1, p2)| window.draw_line(p1, p2, origin_box_color));
+        BOX_EDGES.iter().for_each(|(p1, p2)| window.draw_line(p1, p2, &non_collision_color));
     }
 
     Ok(())
