@@ -26,7 +26,7 @@ pub struct Component {
 impl Component {
     // don't want to impl Default because we want to always have the scene_node captured
     pub fn new(window: &mut Window) -> Self {
-        let scale = Vector3::new(1.0, 1.0, 1.0);
+        let scale = Vector3::new(0.5, 0.5, 0.5);
 
         Component {
             origin: Vector3::identity(),

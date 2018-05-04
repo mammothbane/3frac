@@ -6,6 +6,11 @@ extern crate glfw;
 extern crate itertools;
 #[macro_use] extern crate lazy_static;
 
+use std::{
+    rc::Rc,
+    cell::RefCell,
+};
+
 use kiss3d::{
     window::Window,
     light::Light,
@@ -74,7 +79,7 @@ fn run() -> Result<()> {
     let non_collision_color = Point3::new(1.0, 1.0, 1.0);
     let collision_color = Point3::new(1.0, 0.7, 0.7);
 
-    let mut components = Vec::<Component>::new();
+    let mut components = Vec::<Rc<RefCell<Component>>>::new();
 
     while window.render_with_camera(&mut camera) {
         use glfw::WindowEvent::*;
@@ -117,7 +122,7 @@ fn run() -> Result<()> {
                 new_component.origin = intersect.coords;
                 new_component.apply();
 
-                components.push(new_component);
+                components.push(Rc::new(RefCell::new(new_component)));
             },
 
             _ => {},
@@ -137,25 +142,33 @@ fn run() -> Result<()> {
         use std::cmp::Ordering;
         let toi = components.iter()
             .enumerate()
-            .filter_map(|(idx, comp)| comp.cuboid().toi_with_ray(&comp.cuboid_transform(), &ray, true).map(|x| (idx, x)))
+            .filter_map(|(idx, comp)| {
+                let comp = comp.borrow();
+                comp.cuboid().toi_with_ray(&comp.cuboid_transform(), &ray, true).map(|x| (idx, x))
+            })
             .min_by(|x, y| x.1.partial_cmp(&y.1).unwrap_or(Ordering::Less));
 
         match toi {
             Some((idx, _)) => {
-                components[idx].color = collision_color.coords.clone();
-                components[idx].apply();
+                let mut comp = components[idx].borrow_mut();
+                comp.color = collision_color.coords.clone();
+                comp.apply();
 
                 for i in 0..components.len() {
                     if i == idx {
                         continue;
                     }
 
-                    components[i].color = non_collision_color.coords.clone();
-                    components[i].apply();
+                    let mut comp = components[i].borrow_mut();
+
+                    comp.color = non_collision_color.coords.clone();
+                    comp.apply();
                 }
             },
             None => {
-                components.iter_mut().for_each(|comp| {
+                components.iter().for_each(|comp| {
+                    let mut comp = comp.borrow_mut();
+
                     comp.color = non_collision_color.coords.clone();
                     comp.apply();
                 });
