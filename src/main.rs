@@ -7,7 +7,7 @@ extern crate itertools;
 #[macro_use] extern crate lazy_static;
 
 use std::{
-    rc::Rc,
+    rc::{Weak, Rc},
     cell::RefCell,
 };
 
@@ -18,17 +18,12 @@ use kiss3d::{
 };
 
 use na::{
-    Id,
-    Vector3,
     Point3,
     Vector2,
     Point2,
 };
 
-use nc::{
-    query::Ray3,
-    shape::Cuboid3,
-};
+use nc::query::Ray3;
 
 use glfw::{MouseButtonMiddle, MouseButtonRight, MouseButtonLeft, Action};
 
@@ -72,14 +67,11 @@ fn run() -> Result<()> {
     window.set_light(Light::StickToCamera);
     window.set_framerate_limit(Some(70));
 
-    let mut rayline: Option<(Point3<f32>, Point3<f32>)> = None;
-
-    let origin_cube = Cuboid3::new(Vector3::new(0.5, 0.5, 0.5));
-
     let non_collision_color = Point3::new(1.0, 1.0, 1.0);
     let collision_color = Point3::new(1.0, 0.7, 0.7);
 
     let mut components = Vec::<Rc<RefCell<Component>>>::new();
+    let mut selection: Weak<RefCell<Component>> = Weak::new();
 
     while window.render_with_camera(&mut camera) {
         use glfw::WindowEvent::*;
@@ -88,19 +80,6 @@ fn run() -> Result<()> {
         window.events().iter().for_each(|ref evt| match evt.value {
             ref evt @ Scroll(_, _) => {
                 camera.handle_event(window.glfw_window(), &evt)
-
-            },
-            MouseButton(MouseButtonLeft, Action::Press, _) => {
-                let (x, y) = window.glfw_window().get_cursor_pos();
-
-                let (loc, dir) = camera.unproject(
-                    &Point2::new(x as f32, y as f32),
-                    &Vector2::new(window.width(), window.height())
-                );
-
-                let _ray = Ray3::new(loc, dir);
-
-                rayline = Some((loc, loc + dir.normalize() * 10.0));
             },
 
             Key(Key::N, _, Action::Press, _) => {
@@ -154,6 +133,10 @@ fn run() -> Result<()> {
                 comp.color = collision_color.coords.clone();
                 comp.apply();
 
+                if window.glfw_window().get_mouse_button(MouseButtonLeft) == Action::Press {
+                    selection = Rc::downgrade(&components[idx]);
+                }
+
                 for i in 0..components.len() {
                     if i == idx {
                         continue;
@@ -172,11 +155,16 @@ fn run() -> Result<()> {
                     comp.color = non_collision_color.coords.clone();
                     comp.apply();
                 });
+
+                if window.glfw_window().get_mouse_button(MouseButtonLeft) == Action::Press {
+                    selection = Weak::new();
+                }
             },
         }
 
-        rayline.map(|(ref p1, ref p2)| {
-            window.draw_line(p1, p2, &Point3::new(1.0, 1.0, 1.0));
+        selection.upgrade().map(|comp| {
+            comp.borrow().edges().iter()
+                .for_each(|(p1, p2)| window.draw_line(p1, p2, &Point3::new(1.0, 0.5, 0.5)));
         });
 
         BOX_EDGES.iter().for_each(|(p1, p2)| window.draw_line(p1, p2, &non_collision_color));

@@ -1,3 +1,5 @@
+use std::cmp::{Eq, PartialEq};
+
 use na::{
     UnitQuaternion,
     Vector3,
@@ -42,8 +44,8 @@ impl Component {
 
         BOX_EDGES.iter()
             .map(|(a, b)| {
-                let a = Point3::from_coordinates(a.coords.component_mul(&self.scale));
-                let b = Point3::from_coordinates(b.coords.component_mul(&self.scale));
+                let a = Point3::from_coordinates(a.coords.component_mul(&self.scale) + self.origin);
+                let b = Point3::from_coordinates(b.coords.component_mul(&self.scale) + self.origin);
                 (a, b)
             })
             .collect()
@@ -64,3 +66,18 @@ impl Component {
         Isometry3::from_parts(Translation3::from_vector( self.origin), self.orientation)
     }
 }
+
+impl PartialEq<Component> for Component {
+    fn eq(&self, other: &Component) -> bool {
+        self.origin == other.origin &&
+            self.orientation == other.orientation &&
+            self.scale == other.scale &&
+            self.color == other.color
+    }
+
+    fn ne(&self, other: &Component) -> bool {
+        !self.eq(other)
+    }
+}
+
+impl Eq for Component {}
