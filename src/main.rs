@@ -16,7 +16,8 @@ use na::{
     Vector3,
     Point3,
     Vector2,
-    Point2
+    Point2,
+    Translation3,
 };
 
 use nc::{
@@ -62,8 +63,11 @@ fn run() -> Result<()> {
 
     let mut box_color = &non_collision_color;
 
+    let mut cube_origins = Vec::<Point3<f32>>::new();
+
     while window.render_with_camera(&mut camera) {
         use glfw::WindowEvent::*;
+        use glfw::Key;
 
         window.events().iter().for_each(|ref evt| match evt.value {
             ref evt @ Scroll(_, _) => { camera.handle_event(window.glfw_window(), &evt) },
@@ -78,6 +82,30 @@ fn run() -> Result<()> {
                 let _ray = Ray3::new(loc, dir);
 
                 rayline = Some((loc, loc + dir.normalize() * 5.0));
+            },
+
+            Key(Key::N, _, Action::Press, _) => {
+                let (x, y) = window.glfw_window().get_cursor_pos();
+
+                let (loc, dir) = camera.unproject(
+                    &Point2::new(x as f32, y as f32),
+                    &Vector2::new(window.width(), window.height())
+                );
+
+                // ray-plane intersection
+                // place the new cube on a plane intersecting the origin and normal to the
+                // camera direction
+                let plane_normal = camera.at() - camera.eye();
+                let t = -(loc.coords.dot(&plane_normal)) / dir.dot(&plane_normal);
+                let intersect = loc + t * dir;
+
+                // debug
+                println!("created cube at {:?}", intersect);
+                let mut c = window.add_cube(1.0, 1.0, 1.0);
+                c.set_local_translation(Translation3::from_vector(intersect.coords.clone()));
+                // debug
+
+                cube_origins.push(intersect);
             },
 
             CursorPos(x, y) => {
