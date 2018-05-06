@@ -18,6 +18,8 @@ use kiss3d::{
 };
 
 use na::{
+    Vector3,
+    UnitQuaternion,
     Point3,
     Vector2,
     Point2,
@@ -73,13 +75,40 @@ fn run() -> Result<()> {
     let mut components = Vec::<Rc<RefCell<Component>>>::new();
     let mut selection: Weak<RefCell<Component>> = Weak::new();
 
+    #[derive(Clone, Debug, PartialEq)]
+    struct DragState {
+        pub origin_orientation: UnitQuaternion<f32>, // original orientation of the selected box
+        pub local_handle_offset: Vector3<f32>,       // vector describing the local "attachment point" of the cursor to the box in its original orientation
+        pub camera_dist: f32,
+    }
+
+    let drag_state = Rc::new(RefCell::new(None));
+
     while window.render_with_camera(&mut camera) {
         use glfw::WindowEvent::*;
         use glfw::Key;
 
-        window.events().iter().for_each(|ref evt| match evt.value {
+        window.events().iter().for_each(|ref mut evt| match evt.value {
             ref evt @ Scroll(_, _) => {
                 camera.handle_event(window.glfw_window(), &evt)
+            },
+
+            CursorPos(x, y) => {
+                let (pos, dir) =
+                    camera.unproject(&Point2::new(x as f32, y as f32), &Vector2::new(window.width(), window.height()));
+
+                let state = drag_state.clone();
+                state.borrow().map(|drag_state| {
+                    selection.upgrade().map(|comp| {
+                        let comp = comp.borrow_mut();
+
+                        let camera_rel = comp.origin - camera.eye().coords;
+                    });
+                });
+            },
+
+            MouseButton(MouseButtonLeft, Action::Release, _) => {
+                drag_state.replace(None);
             },
 
             Key(Key::N, _, Action::Press, _) => {
@@ -128,13 +157,19 @@ fn run() -> Result<()> {
             .min_by(|x, y| x.1.partial_cmp(&y.1).unwrap_or(Ordering::Less));
 
         match toi {
-            Some((idx, _)) => {
+            Some((idx, toi)) => {
                 let mut comp = components[idx].borrow_mut();
                 comp.color = collision_color.coords.clone();
                 comp.apply();
 
                 if window.glfw_window().get_mouse_button(MouseButtonLeft) == Action::Press {
                     selection = Rc::downgrade(&components[idx]);
+
+                    drag_state.replace(Some(DragState {
+                        origin_orientation: comp.orientation,
+                        local_handle_offset: (loc + dir * toi).coords - comp.origin,
+                        camera_dist: (camera.eye().coords - comp.origin).norm(),
+                    }));
                 }
 
                 for i in 0..components.len() {
