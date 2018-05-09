@@ -75,31 +75,32 @@ fn run() -> Result<()> {
     let mut components = Vec::<Rc<RefCell<Component>>>::new();
     let mut selection: Weak<RefCell<Component>> = Weak::new();
 
-    #[derive(Clone, Debug, PartialEq)]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     struct DragState {
         pub origin_orientation: UnitQuaternion<f32>, // original orientation of the selected box
         pub local_handle_offset: Vector3<f32>,       // vector describing the local "attachment point" of the cursor to the box in its original orientation
         pub camera_dist: f32,
     }
 
-    let drag_state = Rc::new(RefCell::new(None));
+    let mut drag_state: Option<DragState> = None;
+
+    let mut debug_lines: Vec<(Point3<f32>, Point3<f32>)> = vec!();
 
     while window.render_with_camera(&mut camera) {
         use glfw::WindowEvent::*;
         use glfw::Key;
 
-        window.events().iter().for_each(|ref mut evt| match evt.value {
+        for ref mut evt in window.events().iter() { match evt.value {
             ref evt @ Scroll(_, _) => {
                 camera.handle_event(window.glfw_window(), &evt)
             },
 
             CursorPos(x, y) => {
-                let (pos, dir) =
-                    camera.unproject(&Point2::new(x as f32, y as f32), &Vector2::new(window.width(), window.height()));
-
-                let state = drag_state.clone();
-                state.borrow().map(|drag_state| {
+                drag_state.map(|drag_state| {
                     selection.upgrade().map(|comp| {
+                        let (pos, dir) =
+                            camera.unproject(&Point2::new(x as f32, y as f32), &Vector2::new(window.width(), window.height()));
+
                         let comp = comp.borrow_mut();
 
                         let camera_rel = comp.origin - camera.eye().coords;
@@ -108,7 +109,11 @@ fn run() -> Result<()> {
             },
 
             MouseButton(MouseButtonLeft, Action::Release, _) => {
-                drag_state.replace(None);
+                drag_state = None;
+            },
+
+            Key(Key::Escape, _, Action::Press, _) => {
+                selection = Weak::new();
             },
 
             Key(Key::N, _, Action::Press, _) => {
@@ -134,7 +139,7 @@ fn run() -> Result<()> {
             },
 
             _ => {},
-        });
+        } }
 
         use nc::query::RayCast;
 
@@ -165,11 +170,11 @@ fn run() -> Result<()> {
                 if window.glfw_window().get_mouse_button(MouseButtonLeft) == Action::Press {
                     selection = Rc::downgrade(&components[idx]);
 
-                    drag_state.replace(Some(DragState {
+                    drag_state = Some(DragState {
                         origin_orientation: comp.orientation,
                         local_handle_offset: (loc + dir * toi).coords - comp.origin,
                         camera_dist: (camera.eye().coords - comp.origin).norm(),
-                    }));
+                    });
                 }
 
                 for i in 0..components.len() {
@@ -203,6 +208,8 @@ fn run() -> Result<()> {
         });
 
         BOX_EDGES.iter().for_each(|(p1, p2)| window.draw_line(p1, p2, &non_collision_color));
+
+        d
     }
 
     Ok(())
