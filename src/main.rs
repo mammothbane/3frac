@@ -1,6 +1,7 @@
 extern crate kiss3d;
 extern crate nalgebra as na;
 extern crate ncollide as nc;
+extern crate alga;
 extern crate failure;
 extern crate glfw;
 extern crate itertools;
@@ -26,7 +27,7 @@ use na::{
 };
 
 use nc::query::Ray3;
-
+use alga::linear::Transformation;
 use glfw::{MouseButtonMiddle, MouseButtonRight, MouseButtonLeft, Action};
 
 use self::component::Component;
@@ -58,9 +59,16 @@ lazy_static! {
     };
 }
 
+const VERSION: &'static str = env!("CARGO_PKG_VERSION");
+const NAME: &'static str = env!("CARGO_PKG_NAME");
+
 
 fn run() -> Result<()> {
-    let mut window = Window::new("fractal");
+    #[cfg(debug_assertions)]
+    let mut window = Window::new(&format!("{} {} (dev)", NAME, VERSION));
+
+    #[cfg(not(debug_assertions))]
+    let mut window = Window::new(&format!("{} {}", NAME, VERSION));
 
     let mut camera = ArcBall::new(Point3::new(0.0f32, 0.0, -1.0), Point3::origin());
     camera.rebind_drag_button(Some(MouseButtonMiddle));
@@ -75,7 +83,7 @@ fn run() -> Result<()> {
     let mut components = Vec::<Rc<RefCell<Component>>>::new();
     let mut selection: Weak<RefCell<Component>> = Weak::new();
 
-    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    #[derive(Clone, Debug, PartialEq)]
     struct DragState {
         pub origin_orientation: UnitQuaternion<f32>, // original orientation of the selected box
         pub local_handle_offset: Vector3<f32>,       // vector describing the local "attachment point" of the cursor to the box in its original orientation
@@ -84,7 +92,7 @@ fn run() -> Result<()> {
 
     let mut drag_state: Option<DragState> = None;
 
-    let mut debug_lines: Vec<(Point3<f32>, Point3<f32>)> = vec!();
+//    let mut debug_lines: Vec<(Point3<f32>, Point3<f32>)> = vec!();
 
     while window.render_with_camera(&mut camera) {
         use glfw::WindowEvent::*;
@@ -96,7 +104,7 @@ fn run() -> Result<()> {
             },
 
             CursorPos(x, y) => {
-                drag_state.map(|drag_state| {
+                drag_state.iter().for_each(|ref drag_state| {
                     selection.upgrade().map(|comp| {
                         let (pos, dir) =
                             camera.unproject(&Point2::new(x as f32, y as f32), &Vector2::new(window.width(), window.height()));
@@ -113,6 +121,7 @@ fn run() -> Result<()> {
             },
 
             Key(Key::Escape, _, Action::Press, _) => {
+                // todo: inhibit event
                 selection = Weak::new();
             },
 
@@ -209,7 +218,19 @@ fn run() -> Result<()> {
 
         BOX_EDGES.iter().for_each(|(p1, p2)| window.draw_line(p1, p2, &non_collision_color));
 
-        d
+//        debug_lines.iter().for_each(|(p1, p2)| window.draw_line(p1, p2, &Point3::new(0.7, 0.7, 1.0)));
+
+        drag_state.iter().for_each(|drag_state| {
+            selection.upgrade().map(|comp| {
+                let comp = comp.borrow();
+
+                let origin = Point3 { coords: comp.origin };
+                let rotation = comp.orientation / drag_state.origin_orientation;
+                let terminus = origin + rotation.transform_vector(&drag_state.local_handle_offset);
+
+                window.draw_line(&origin, &terminus, &Point3::new(0.7, 0.7, 1.0));
+            });
+        });
     }
 
     Ok(())
