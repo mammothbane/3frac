@@ -193,6 +193,32 @@ fn main() -> Result<()> {
                 drag_state = None;
             },
 
+            Key(Key::W, _, Action::Press, _) | Key(Key::Up, _, Action::Press, _) => {
+                selection.upgrade().map(|comp| )
+
+
+            },
+
+            Key(Key::A, _, Action::Press, _) | Key(Key::Left, _, Action::Press, _) => {
+
+            },
+
+            Key(Key::S, _, Action::Press, _) | Key(Key::Down, _, Action::Press, _) => {
+
+            },
+
+            Key(Key::D, _, Action::Press, _) | Key(Key::Right, _, Action::Press, _) => {
+
+            },
+
+            Key(Key::Space, _, Action::Press, _) => {
+
+            },
+
+            Key(Key::C, _, Action::Press, _) => {
+
+            },
+
             Key(Key::Escape, _, Action::Press, _) => {
                 // TODO: inhibit event
                 selection = Weak::new();
