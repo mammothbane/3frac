@@ -63,8 +63,11 @@ lazy_static! {
 
 const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 const NAME: &'static str = env!("CARGO_PKG_NAME");
+
 const SELECTION_BBOX_SCALE: f32 = 1.1;
 
+const KEYBOARD_TRANSLATE_BASE: f32 = 0.1;
+const KEYBOARD_TRANSLATE_LARGE: f32 = 10.0;
 
 fn main() -> Result<()> {
     #[cfg(debug_assertions)]
@@ -99,7 +102,7 @@ fn main() -> Result<()> {
 
     while window.render_with_camera(&mut camera) {
         use glfw::WindowEvent::*;
-        use glfw::Key;
+        use glfw::{Key, Modifiers};
 
         // -- mouse ray collision --
 
@@ -193,30 +196,106 @@ fn main() -> Result<()> {
                 drag_state = None;
             },
 
-            Key(Key::W, _, Action::Press, _) | Key(Key::Up, _, Action::Press, _) => {
-                selection.upgrade().map(|comp| )
+            Key(Key::W, _, Action::Press, mods) => {
+                if drag_state.is_some() {
+                    continue;
+                }
 
+                selection.upgrade().map(|comp| {
+                    let mut comp = comp.borrow_mut();
+                    let translate_factor = if (mods & Modifiers::Shift).is_empty() {
+                        KEYBOARD_TRANSLATE_BASE
+                    } else {
+                        KEYBOARD_TRANSLATE_BASE * KEYBOARD_TRANSLATE_LARGE
+                    };
 
+                    comp.origin += translate_factor * Vector3::z();
+                });
             },
 
-            Key(Key::A, _, Action::Press, _) | Key(Key::Left, _, Action::Press, _) => {
+            Key(Key::A, _, Action::Press, mods) => {
+                if drag_state.is_some() {
+                    continue;
+                }
 
+                selection.upgrade().map(|comp| {
+                    let mut comp = comp.borrow_mut();
+                    let translate_factor = if (mods & Modifiers::Shift).is_empty() {
+                        KEYBOARD_TRANSLATE_BASE
+                    } else {
+                        KEYBOARD_TRANSLATE_BASE * KEYBOARD_TRANSLATE_LARGE
+                    };
+
+                    comp.origin += translate_factor * Vector3::x();
+                });
             },
 
-            Key(Key::S, _, Action::Press, _) | Key(Key::Down, _, Action::Press, _) => {
+            Key(Key::S, _, Action::Press, mods) => {
+                if drag_state.is_some() {
+                    continue;
+                }
 
+                selection.upgrade().map(|comp| {
+                    let mut comp = comp.borrow_mut();
+                    let translate_factor = if (mods & Modifiers::Shift).is_empty() {
+                        KEYBOARD_TRANSLATE_BASE
+                    } else {
+                        KEYBOARD_TRANSLATE_BASE * KEYBOARD_TRANSLATE_LARGE
+                    };
+
+                    comp.origin += -translate_factor * Vector3::z();
+                });
             },
 
-            Key(Key::D, _, Action::Press, _) | Key(Key::Right, _, Action::Press, _) => {
+            Key(Key::D, _, Action::Press, mods) => {
+                if drag_state.is_some() {
+                    continue;
+                }
 
+                selection.upgrade().map(|comp| {
+                    let mut comp = comp.borrow_mut();
+                    let translate_factor = if (mods & Modifiers::Shift).is_empty() {
+                        KEYBOARD_TRANSLATE_BASE
+                    } else {
+                        KEYBOARD_TRANSLATE_BASE * KEYBOARD_TRANSLATE_LARGE
+                    };
+
+                    comp.origin += -translate_factor * Vector3::x();
+                });
             },
 
-            Key(Key::Space, _, Action::Press, _) => {
+            Key(Key::Space, _, Action::Press, mods) => {
+                if drag_state.is_some() {
+                    continue;
+                }
 
+                selection.upgrade().map(|comp| {
+                    let mut comp = comp.borrow_mut();
+                    let translate_factor = if (mods & Modifiers::Shift).is_empty() {
+                        KEYBOARD_TRANSLATE_BASE
+                    } else {
+                        KEYBOARD_TRANSLATE_BASE * KEYBOARD_TRANSLATE_LARGE
+                    };
+
+                    comp.origin += translate_factor * Vector3::y();
+                });
             },
 
-            Key(Key::C, _, Action::Press, _) => {
+            Key(Key::C, _, Action::Press, mods) => {
+                if drag_state.is_some() {
+                    continue;
+                }
 
+                selection.upgrade().map(|comp| {
+                    let mut comp = comp.borrow_mut();
+                    let translate_factor = if (mods & Modifiers::Shift).is_empty() {
+                        KEYBOARD_TRANSLATE_BASE
+                    } else {
+                        KEYBOARD_TRANSLATE_BASE * KEYBOARD_TRANSLATE_LARGE
+                    };
+
+                    comp.origin += -translate_factor * Vector3::y();
+                });
             },
 
             Key(Key::Escape, _, Action::Press, _) => {
