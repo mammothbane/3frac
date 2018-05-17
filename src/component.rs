@@ -6,6 +6,8 @@ use na::{
     Vector3,
     Translation3,
     Point3,
+    Transform3,
+    Matrix4,
     Isometry3,
 };
 
@@ -23,6 +25,7 @@ pub struct Component { // Component isn't Clone because we need SceneNodes
     pub color: Vector3<f32>,
     pub scene_node: SceneNode,
     uid: usize,
+    pub hovered: bool,
 }
 
 static UID_CTR: AtomicUsize = AtomicUsize::new(0);
@@ -36,9 +39,10 @@ impl Component {
             origin: Vector3::identity(),
             orientation: UnitQuaternion::identity(),
             scale,
-            color: Vector3::new(1.0, 1.0, 1.0),
+            color: Vector3::new(0.5, 1.0, 0.5),
             scene_node: window.add_cube(scale[0], scale[1], scale[2]),
             uid: UID_CTR.fetch_add(1, Ordering::Relaxed),
+            hovered: false,
         }
     }
 
@@ -46,19 +50,27 @@ impl Component {
         use alga::linear::Transformation;
         use BOX_EDGES;
 
-        BOX_EDGES.iter()
-            .map(|(a, b)| {
-                let a = self.orientation.transform_vector(&a.coords.component_mul(&self.scale)) + self.origin;
-                let b = self.orientation.transform_vector(&b.coords.component_mul(&self.scale)) + self.origin;
+        let transform = self.transform();
 
-                (Point3::from_coordinates(a), Point3::from_coordinates(b))
-            })
+        BOX_EDGES.iter()
+            .map(|(a, b)| (transform.transform_point(a), transform.transform_point(b)))
             .collect()
     }
 
     pub fn apply(&mut self) {
+        use palette::{LinSrgb, Blend};
+
+        if self.hovered {
+            let selected_color = LinSrgb::new(1.0, 0.7, 0.7);
+            let cur_color = LinSrgb::new(self.color[0], self.color[1], self.color[2]);
+            let result = selected_color.multiply(cur_color);
+
+            self.scene_node.set_color(result.red, result.green, result.blue);
+        } else {
+            self.scene_node.set_color(self.color[0], self.color[1], self.color[2]);
+        }
+
         self.scene_node.set_local_translation(Translation3::from_vector(self.origin.clone()));
-        self.scene_node.set_color(self.color[0], self.color[1], self.color[2]);
         self.scene_node.set_local_rotation(self.orientation);
         self.scene_node.set_local_scale(self.scale[0], self.scale[1], self.scale[2]);
     }
@@ -67,8 +79,12 @@ impl Component {
         Cuboid3::new(self.scale / 2.0)
     }
 
-    pub fn cuboid_transform(&self) -> Isometry3<f32> {
-        Isometry3::from_parts(Translation3::from_vector( self.origin), self.orientation)
+    pub fn isometric_part(&self) -> Isometry3<f32> {
+        Isometry3::from_parts(Translation3::from_vector(self.origin), self.orientation)
+    }
+
+    pub fn transform(&self) -> Transform3<f32> {
+         Transform3::from_matrix_unchecked( self.isometric_part().to_homogeneous() * Matrix4::new_nonuniform_scaling(&self.scale))
     }
 }
 

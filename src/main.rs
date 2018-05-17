@@ -5,6 +5,7 @@ extern crate alga;
 extern crate failure;
 extern crate glfw;
 extern crate itertools;
+extern crate palette;
 #[macro_use] extern crate lazy_static;
 
 use std::{
@@ -16,6 +17,7 @@ use kiss3d::{
     window::Window,
     light::Light,
     camera::{ArcBall, Camera},
+    text::Font,
 };
 
 use na::{
@@ -37,6 +39,8 @@ use self::component::Component;
 mod component;
 
 pub(crate) type Result<T> = std::result::Result<T, failure::Error>;
+
+static ROBOTO_TTF: &'static [u8] = include_bytes!("resources/roboto.ttf");
 
 lazy_static! {
     static ref BOX_EDGES: Vec<(Point3<f32>, Point3<f32>)> = {
@@ -66,28 +70,33 @@ const NAME: &'static str = env!("CARGO_PKG_NAME");
 
 const SELECTION_BBOX_SCALE: f32 = 1.1;
 
-const KEYBOARD_TRANSLATE_BASE: f32 = 0.1;
-const KEYBOARD_TRANSLATE_FINE: f32 = 0.1;
+const TRANSLATE_ADJUST_BASE: f32 = 0.1;
+const TRANSLATE_ADJUST_FINE: f32 = 0.1;
 
-const KEYBOARD_ROTATE_BASE: f32 = (2.0 * std::f32::consts::PI) / 24.0;
-const KEYBOARD_ROTATE_FINE: f32 = 1.0 / 12.0;
+const ROTATE_ADJUST_BASE: f32 = (2.0 * std::f32::consts::PI) / 24.0;
+const ROTATE_ADJUST_FINE: f32 = 1.0 / 12.0;
+
+const SCALE_ADJUST_BASE: f32 = 0.06;
+const SCALE_ADJUST_FINE: f32 = 0.25;
+
+const COLOR_ADJUST_BASE: f32 = 2.0;
+const COLOR_ADJUST_FINE: f32 = 0.25;
 
 fn main() -> Result<()> {
     #[cfg(debug_assertions)]
-    let mut window = Window::new(&format!("{} {} (dev)", NAME, VERSION));
+    let mut window = Window::new_with_size(&format!("{} {} (dev)", NAME, VERSION), 1400, 800);
 
     #[cfg(not(debug_assertions))]
-    let mut window = Window::new(&format!("{} {}", NAME, VERSION));
+    let mut window = Window::new_with_size(&format!("{} {}", NAME, VERSION), 1400, 800);
 
-    let mut camera = ArcBall::new(Point3::new(0.0f32, 0.0, -1.0), Point3::origin());
+    let roboto_font = Font::from_memory(ROBOTO_TTF, 45);
+
+    let mut camera = ArcBall::new(Point3::new(0.0f32, 0.0, -4.0), Point3::origin());
     camera.rebind_drag_button(Some(MouseButtonMiddle));
     camera.rebind_rotate_button(Some(MouseButtonRight));
 
     window.set_light(Light::StickToCamera);
     window.set_framerate_limit(Some(70));
-
-    let non_collision_color = Point3::new(1.0, 1.0, 1.0);
-    let collision_color = Point3::new(1.0, 0.7, 0.7);
 
     let mut components = Vec::<Rc<RefCell<Component>>>::new();
     let mut selection: Weak<RefCell<Component>> = Weak::new();
@@ -101,14 +110,11 @@ fn main() -> Result<()> {
 
     let mut drag_state: Option<DragState> = None;
 
-//    let mut debug_lines: Vec<(Point3<f32>, Point3<f32>)> = vec!();
-
     while window.render_with_camera(&mut camera) {
         use glfw::WindowEvent::*;
         use glfw::{Key, Modifiers};
 
         // -- mouse ray collision --
-
         fn project_mouse(window: &Window, camera: &ArcBall) -> Ray3<f32> {
             let (x, y) = window.glfw_window().get_cursor_pos();
 
@@ -129,7 +135,7 @@ fn main() -> Result<()> {
                 .enumerate()
                 .filter_map(|(idx, comp)| {
                     let comp = comp.borrow();
-                    comp.cuboid().toi_with_ray(&comp.cuboid_transform(), &mouse_projection, true).map(|x| (idx, x))
+                    comp.cuboid().toi_with_ray(&comp.isometric_part(), &mouse_projection, true).map(|x| (idx, x))
                 })
                 .min_by(|x, y| x.1.partial_cmp(&y.1).unwrap_or(Ordering::Less))
                 .map(|(idx, toi)| (Rc::downgrade(&components[idx]), mouse_projection.origin + toi * mouse_projection.dir))
@@ -140,8 +146,7 @@ fn main() -> Result<()> {
                 let comp = comp.upgrade().expect("failed to upgrade newly-created Weak");
                 {
                     let mut comp = comp.borrow_mut();
-
-                    comp.color = collision_color.coords.clone();
+                    comp.hovered = true;
                     comp.apply();
                 }
 
@@ -153,26 +158,20 @@ fn main() -> Result<()> {
                     }
 
                     let mut comp = comp.borrow_mut();
-
-                    comp.color = non_collision_color.coords.clone();
+                    comp.hovered = false;
                     comp.apply();
                 }
             },
             None => {
                 components.iter().for_each(|comp| {
                     let mut comp = comp.borrow_mut();
-
-                    comp.color = non_collision_color.coords.clone();
+                    comp.hovered = false;
                     comp.apply();
                 });
             },
         }
 
         for ref mut evt in window.events().iter() { match evt.value {
-            ref evt @ Scroll(_, _) => {
-                camera.handle_event(window.glfw_window(), &evt)
-            },
-
             MouseButton(MouseButtonLeft, Action::Press, _) => {
                 match ray_intersect {
                     Some((ref comp, ref intersect)) => {
@@ -199,13 +198,72 @@ fn main() -> Result<()> {
                 drag_state = None;
             },
 
-            Key(Key::Escape, _, Action::Press, _) => {
-                // TODO: inhibit event
-                selection = Weak::new();
+            Scroll(unused, offset) => {
+                evt.inhibited = true;
+
+                let glfw_window = window.glfw_window();
+
+                let mut fine = glfw_window.get_key(Key::LeftShift) == Action::Press || glfw_window.get_key(Key::RightShift) == Action::Press;
+
+                if let Some(comp) = selection.upgrade() {
+                    let offset = offset as f32;
+                    let mut comp = comp.borrow_mut();
+
+                    let adjustment = if fine {
+                        SCALE_ADJUST_BASE * SCALE_ADJUST_FINE
+                    } else {
+                        SCALE_ADJUST_BASE
+                    };
+
+                    if glfw_window.get_key(Key::B) == Action::Press {
+                        comp.scale[0] = 0.0f32.max(comp.scale[0] + adjustment * offset);
+                        comp.scale[1] = 0.0f32.max( comp.scale[1] + adjustment * offset);
+                        comp.scale[2] = 0.0f32.max(comp.scale[2] + adjustment * offset);
+                        comp.apply();
+                    } else if glfw_window.get_key(Key::X) == Action::Press {
+                        comp.scale[0] = 0.0f32.max(comp.scale[0] + adjustment * offset);
+                        comp.apply();
+                    } else if glfw_window.get_key(Key::Y) == Action::Press {
+                        comp.scale[1] = 0.0f32.max( comp.scale[1] + adjustment * offset);
+                        comp.apply();
+                    } else if glfw_window.get_key(Key::Z) == Action::Press {
+                        comp.scale[2] = 0.0f32.max( comp.scale[2] + adjustment * offset);
+                        comp.apply();
+                    } else if glfw_window.get_key(Key::C) == Action::Press {
+                        use palette::{Hsl, LinSrgb, FromColor};
+
+                        let mut color: Hsl<_, _> = LinSrgb::new(comp.color[0], comp.color[1], comp.color[2]).into();
+
+                        let adjustment = if fine {
+                            COLOR_ADJUST_BASE * COLOR_ADJUST_FINE
+                        } else {
+                            COLOR_ADJUST_BASE
+                        };
+
+                        color.hue = color.hue + adjustment * offset;
+
+                        let color = LinSrgb::from_hsl(color);
+
+                        comp.color = Vector3::new(color.red, color.green, color.blue);
+                        comp.apply();
+                    } else {
+                        camera.handle_event(window.glfw_window(), &Scroll(unused, -(offset as f64)));
+                    }
+                } else {
+                    camera.handle_event(window.glfw_window(), &Scroll(unused, -offset));
+                }
+            },
+
+            Key(Key::Escape, _, action, _) => {
+                evt.inhibited = true;
+
+                if action == Action::Press {
+                    selection = Weak::new();
+                }
             },
 
             // create a new box
-            Key(Key::N, _, Action::Press, _) => {
+            Key(Key::N, _, Action::Press, mods) => {
                 use nc::shape::Plane3;
                 use na::Unit;
 
@@ -226,6 +284,10 @@ fn main() -> Result<()> {
 
                 let mut new_component = Component::new(&mut window);
                 new_component.origin = intersect.coords;
+                if !(mods & Modifiers::Shift).is_empty() {
+                    new_component.scale *= 2.0;
+                }
+
                 new_component.apply();
 
                 components.push(Rc::new(RefCell::new(new_component)));
@@ -247,9 +309,9 @@ fn main() -> Result<()> {
                 selection.upgrade().map(|comp| {
                     let mut comp = comp.borrow_mut();
                     let translate_factor = if (mods & Modifiers::Shift).is_empty() {
-                        KEYBOARD_TRANSLATE_BASE
+                        TRANSLATE_ADJUST_BASE
                     } else {
-                        KEYBOARD_TRANSLATE_BASE * KEYBOARD_TRANSLATE_FINE
+                        TRANSLATE_ADJUST_BASE * TRANSLATE_ADJUST_FINE
                     };
 
                     comp.origin += translate_factor * Vector3::z();
@@ -265,9 +327,9 @@ fn main() -> Result<()> {
                 selection.upgrade().map(|comp| {
                     let mut comp = comp.borrow_mut();
                     let translate_factor = if (mods & Modifiers::Shift).is_empty() {
-                        KEYBOARD_TRANSLATE_BASE
+                        TRANSLATE_ADJUST_BASE
                     } else {
-                        KEYBOARD_TRANSLATE_BASE * KEYBOARD_TRANSLATE_FINE
+                        TRANSLATE_ADJUST_BASE * TRANSLATE_ADJUST_FINE
                     };
 
                     comp.origin += translate_factor * Vector3::x();
@@ -283,9 +345,9 @@ fn main() -> Result<()> {
                 selection.upgrade().map(|comp| {
                     let mut comp = comp.borrow_mut();
                     let translate_factor = if (mods & Modifiers::Shift).is_empty() {
-                        KEYBOARD_TRANSLATE_BASE
+                        TRANSLATE_ADJUST_BASE
                     } else {
-                        KEYBOARD_TRANSLATE_BASE * KEYBOARD_TRANSLATE_FINE
+                        TRANSLATE_ADJUST_BASE * TRANSLATE_ADJUST_FINE
                     };
 
                     comp.origin += -translate_factor * Vector3::z();
@@ -301,9 +363,9 @@ fn main() -> Result<()> {
                 selection.upgrade().map(|comp| {
                     let mut comp = comp.borrow_mut();
                     let translate_factor = if (mods & Modifiers::Shift).is_empty() {
-                        KEYBOARD_TRANSLATE_BASE
+                        TRANSLATE_ADJUST_BASE
                     } else {
-                        KEYBOARD_TRANSLATE_BASE * KEYBOARD_TRANSLATE_FINE
+                        TRANSLATE_ADJUST_BASE * TRANSLATE_ADJUST_FINE
                     };
 
                     comp.origin += -translate_factor * Vector3::x();
@@ -319,9 +381,9 @@ fn main() -> Result<()> {
                 selection.upgrade().map(|comp| {
                     let mut comp = comp.borrow_mut();
                     let translate_factor = if (mods & Modifiers::Shift).is_empty() {
-                        KEYBOARD_TRANSLATE_BASE
+                        TRANSLATE_ADJUST_BASE
                     } else {
-                        KEYBOARD_TRANSLATE_BASE * KEYBOARD_TRANSLATE_FINE
+                        TRANSLATE_ADJUST_BASE * TRANSLATE_ADJUST_FINE
                     };
 
                     comp.origin += translate_factor * Vector3::y();
@@ -337,9 +399,9 @@ fn main() -> Result<()> {
                 selection.upgrade().map(|comp| {
                     let mut comp = comp.borrow_mut();
                     let translate_factor = if (mods & Modifiers::Shift).is_empty() {
-                        KEYBOARD_TRANSLATE_BASE
+                        TRANSLATE_ADJUST_BASE
                     } else {
-                        KEYBOARD_TRANSLATE_BASE * KEYBOARD_TRANSLATE_FINE
+                        TRANSLATE_ADJUST_BASE * TRANSLATE_ADJUST_FINE
                     };
 
                     comp.origin += -translate_factor * Vector3::y();
@@ -353,9 +415,9 @@ fn main() -> Result<()> {
                 selection.upgrade().map(|comp| {
                     let mut comp = comp.borrow_mut();
                     let rotate_factor = if (mods & Modifiers::Shift).is_empty() {
-                        KEYBOARD_ROTATE_BASE
+                        ROTATE_ADJUST_BASE
                     } else {
-                        KEYBOARD_ROTATE_BASE * KEYBOARD_ROTATE_FINE
+                        ROTATE_ADJUST_BASE * ROTATE_ADJUST_FINE
                     };
 
                     comp.orientation *= UnitQuaternion::from_axis_angle(&Vector3::x_axis(), rotate_factor);
@@ -367,9 +429,9 @@ fn main() -> Result<()> {
                 selection.upgrade().map(|comp| {
                     let mut comp = comp.borrow_mut();
                     let rotate_factor = if (mods & Modifiers::Shift).is_empty() {
-                        KEYBOARD_ROTATE_BASE
+                        ROTATE_ADJUST_BASE
                     } else {
-                        KEYBOARD_ROTATE_BASE * KEYBOARD_ROTATE_FINE
+                        ROTATE_ADJUST_BASE * ROTATE_ADJUST_FINE
                     };
 
                     comp.orientation *= UnitQuaternion::from_axis_angle(&Vector3::z_axis(), -rotate_factor);
@@ -381,9 +443,9 @@ fn main() -> Result<()> {
                 selection.upgrade().map(|comp| {
                     let mut comp = comp.borrow_mut();
                     let rotate_factor = if (mods & Modifiers::Shift).is_empty() {
-                        KEYBOARD_ROTATE_BASE
+                        ROTATE_ADJUST_BASE
                     } else {
-                        KEYBOARD_ROTATE_BASE * KEYBOARD_ROTATE_FINE
+                        ROTATE_ADJUST_BASE * ROTATE_ADJUST_FINE
                     };
 
                     comp.orientation *= UnitQuaternion::from_axis_angle(&Vector3::x_axis(), -rotate_factor);
@@ -395,9 +457,9 @@ fn main() -> Result<()> {
                 selection.upgrade().map(|comp| {
                     let mut comp = comp.borrow_mut();
                     let rotate_factor = if (mods & Modifiers::Shift).is_empty() {
-                        KEYBOARD_ROTATE_BASE
+                        ROTATE_ADJUST_BASE
                     } else {
-                        KEYBOARD_ROTATE_BASE * KEYBOARD_ROTATE_FINE
+                        ROTATE_ADJUST_BASE * ROTATE_ADJUST_FINE
                     };
 
                     comp.orientation *= UnitQuaternion::from_axis_angle(&Vector3::z_axis(), rotate_factor);
@@ -409,9 +471,9 @@ fn main() -> Result<()> {
                 selection.upgrade().map(|comp| {
                     let mut comp = comp.borrow_mut();
                     let rotate_factor = if (mods & Modifiers::Shift).is_empty() {
-                        KEYBOARD_ROTATE_BASE
+                        ROTATE_ADJUST_BASE
                     } else {
-                        KEYBOARD_ROTATE_BASE * KEYBOARD_ROTATE_FINE
+                        ROTATE_ADJUST_BASE * ROTATE_ADJUST_FINE
                     };
 
                     comp.orientation *= UnitQuaternion::from_axis_angle(&Vector3::y_axis(), -rotate_factor);
@@ -423,9 +485,9 @@ fn main() -> Result<()> {
                 selection.upgrade().map(|comp| {
                     let mut comp = comp.borrow_mut();
                     let rotate_factor = if (mods & Modifiers::Shift).is_empty() {
-                        KEYBOARD_ROTATE_BASE
+                        ROTATE_ADJUST_BASE
                     } else {
-                        KEYBOARD_ROTATE_BASE * KEYBOARD_ROTATE_FINE
+                        ROTATE_ADJUST_BASE * ROTATE_ADJUST_FINE
                     };
 
                     comp.orientation *= UnitQuaternion::from_axis_angle(&Vector3::y_axis(), rotate_factor);
@@ -439,21 +501,35 @@ fn main() -> Result<()> {
         let mouse_projection = project_mouse(&window, &camera);
 
         selection.upgrade().map(|comp| {
+            use na::Point2;
+            use na::Matrix4;
+            use alga::linear::Transformation;
+
             let comp = comp.borrow();
 
-            comp.edges().iter()
-                .for_each(|(p1, p2)| {
-                    let p1_vec = p1.coords - comp.origin;
-                    let p2_vec = p2.coords - comp.origin;
+            let matrix = comp.transform().matrix().clone();
+            let mut matrix_fmt = String::new();
+            for i in 0..4 {
+                for j in 0..4 {
+                    matrix_fmt.push_str(&format!("{: >6.2} ", matrix[(i, j)]));
+                }
+                matrix_fmt.push('\n');
+            }
 
-                    let p1 = Point3::from_coordinates(comp.origin + SELECTION_BBOX_SCALE * p1_vec);
-                    let p2 = Point3::from_coordinates(comp.origin + SELECTION_BBOX_SCALE * p2_vec);
+            let text = format!("selected transform (matrix representation)\n{}", matrix_fmt);
+            window.draw_text(&text, &Point2::new(10.0, 10.0), &roboto_font, &Point3::new(0.9, 0.9, 0.9));
 
-                    window.draw_line(&p1, &p2, &Point3::new(1.0, 0.5, 0.5))
-                });
+            let scale = Matrix4::new_scaling(SELECTION_BBOX_SCALE) * Matrix4::new_nonuniform_scaling(&comp.scale);
+            let transform = comp.isometric_part().to_homogeneous() * scale;
+
+            BOX_EDGES.iter()
+                .for_each(|(p1, p2)|
+                    window.draw_line(&transform.transform_point(&p1), &transform.transform_point(&p2), &Point3::new(1.0, 0.5, 0.5))
+                );
+
         });
 
-        BOX_EDGES.iter().for_each(|(p1, p2)| window.draw_line(p1, p2, &non_collision_color));
+        BOX_EDGES.iter().for_each(|(p1, p2)| window.draw_line(p1, p2, &Point3::new(1.0, 1.0, 1.0)));
 
         drag_state.iter().for_each(|drag_state| {
             selection.upgrade().map(|comp| {
