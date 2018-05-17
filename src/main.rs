@@ -67,7 +67,10 @@ const NAME: &'static str = env!("CARGO_PKG_NAME");
 const SELECTION_BBOX_SCALE: f32 = 1.1;
 
 const KEYBOARD_TRANSLATE_BASE: f32 = 0.1;
-const KEYBOARD_TRANSLATE_LARGE: f32 = 10.0;
+const KEYBOARD_TRANSLATE_FINE: f32 = 0.1;
+
+const KEYBOARD_ROTATE_BASE: f32 = (2.0 * std::f32::consts::PI) / 24.0;
+const KEYBOARD_ROTATE_FINE: f32 = 1.0 / 12.0;
 
 fn main() -> Result<()> {
     #[cfg(debug_assertions)]
@@ -181,7 +184,7 @@ fn main() -> Result<()> {
                             drag_state = Some(DragState {
                                 origin_orientation: comp.orientation,
                                 local_handle_offset: intersect.coords - comp.origin,
-                                camera_dist: (camera.eye().coords - intersect.coords).norm(),
+                                camera_dist: (mouse_projection.origin.coords - intersect.coords).norm(),
                             });
                         });
                     },
@@ -196,113 +199,12 @@ fn main() -> Result<()> {
                 drag_state = None;
             },
 
-            Key(Key::W, _, Action::Press, mods) => {
-                if drag_state.is_some() {
-                    continue;
-                }
-
-                selection.upgrade().map(|comp| {
-                    let mut comp = comp.borrow_mut();
-                    let translate_factor = if (mods & Modifiers::Shift).is_empty() {
-                        KEYBOARD_TRANSLATE_BASE
-                    } else {
-                        KEYBOARD_TRANSLATE_BASE * KEYBOARD_TRANSLATE_LARGE
-                    };
-
-                    comp.origin += translate_factor * Vector3::z();
-                });
-            },
-
-            Key(Key::A, _, Action::Press, mods) => {
-                if drag_state.is_some() {
-                    continue;
-                }
-
-                selection.upgrade().map(|comp| {
-                    let mut comp = comp.borrow_mut();
-                    let translate_factor = if (mods & Modifiers::Shift).is_empty() {
-                        KEYBOARD_TRANSLATE_BASE
-                    } else {
-                        KEYBOARD_TRANSLATE_BASE * KEYBOARD_TRANSLATE_LARGE
-                    };
-
-                    comp.origin += translate_factor * Vector3::x();
-                });
-            },
-
-            Key(Key::S, _, Action::Press, mods) => {
-                if drag_state.is_some() {
-                    continue;
-                }
-
-                selection.upgrade().map(|comp| {
-                    let mut comp = comp.borrow_mut();
-                    let translate_factor = if (mods & Modifiers::Shift).is_empty() {
-                        KEYBOARD_TRANSLATE_BASE
-                    } else {
-                        KEYBOARD_TRANSLATE_BASE * KEYBOARD_TRANSLATE_LARGE
-                    };
-
-                    comp.origin += -translate_factor * Vector3::z();
-                });
-            },
-
-            Key(Key::D, _, Action::Press, mods) => {
-                if drag_state.is_some() {
-                    continue;
-                }
-
-                selection.upgrade().map(|comp| {
-                    let mut comp = comp.borrow_mut();
-                    let translate_factor = if (mods & Modifiers::Shift).is_empty() {
-                        KEYBOARD_TRANSLATE_BASE
-                    } else {
-                        KEYBOARD_TRANSLATE_BASE * KEYBOARD_TRANSLATE_LARGE
-                    };
-
-                    comp.origin += -translate_factor * Vector3::x();
-                });
-            },
-
-            Key(Key::Space, _, Action::Press, mods) => {
-                if drag_state.is_some() {
-                    continue;
-                }
-
-                selection.upgrade().map(|comp| {
-                    let mut comp = comp.borrow_mut();
-                    let translate_factor = if (mods & Modifiers::Shift).is_empty() {
-                        KEYBOARD_TRANSLATE_BASE
-                    } else {
-                        KEYBOARD_TRANSLATE_BASE * KEYBOARD_TRANSLATE_LARGE
-                    };
-
-                    comp.origin += translate_factor * Vector3::y();
-                });
-            },
-
-            Key(Key::C, _, Action::Press, mods) => {
-                if drag_state.is_some() {
-                    continue;
-                }
-
-                selection.upgrade().map(|comp| {
-                    let mut comp = comp.borrow_mut();
-                    let translate_factor = if (mods & Modifiers::Shift).is_empty() {
-                        KEYBOARD_TRANSLATE_BASE
-                    } else {
-                        KEYBOARD_TRANSLATE_BASE * KEYBOARD_TRANSLATE_LARGE
-                    };
-
-                    comp.origin += -translate_factor * Vector3::y();
-                });
-            },
-
             Key(Key::Escape, _, Action::Press, _) => {
                 // TODO: inhibit event
                 selection = Weak::new();
             },
 
+            // create a new box
             Key(Key::N, _, Action::Press, _) => {
                 use nc::shape::Plane3;
                 use na::Unit;
@@ -329,6 +231,208 @@ fn main() -> Result<()> {
                 components.push(Rc::new(RefCell::new(new_component)));
             },
 
+            // reset box orientation
+            Key(Key::Backspace, _, Action::Press, _) => {
+                selection.upgrade().map(|comp| {
+                    comp.borrow_mut().orientation = UnitQuaternion::identity();
+                });
+            },
+
+            // -- Translation --
+            Key(Key::W, _, Action::Press, mods) => {
+                if drag_state.is_some() {
+                    continue;
+                }
+
+                selection.upgrade().map(|comp| {
+                    let mut comp = comp.borrow_mut();
+                    let translate_factor = if (mods & Modifiers::Shift).is_empty() {
+                        KEYBOARD_TRANSLATE_BASE
+                    } else {
+                        KEYBOARD_TRANSLATE_BASE * KEYBOARD_TRANSLATE_FINE
+                    };
+
+                    comp.origin += translate_factor * Vector3::z();
+                    comp.apply();
+                });
+            },
+
+            Key(Key::A, _, Action::Press, mods) => {
+                if drag_state.is_some() {
+                    continue;
+                }
+
+                selection.upgrade().map(|comp| {
+                    let mut comp = comp.borrow_mut();
+                    let translate_factor = if (mods & Modifiers::Shift).is_empty() {
+                        KEYBOARD_TRANSLATE_BASE
+                    } else {
+                        KEYBOARD_TRANSLATE_BASE * KEYBOARD_TRANSLATE_FINE
+                    };
+
+                    comp.origin += translate_factor * Vector3::x();
+                    comp.apply();
+                });
+            },
+
+            Key(Key::S, _, Action::Press, mods) => {
+                if drag_state.is_some() {
+                    continue;
+                }
+
+                selection.upgrade().map(|comp| {
+                    let mut comp = comp.borrow_mut();
+                    let translate_factor = if (mods & Modifiers::Shift).is_empty() {
+                        KEYBOARD_TRANSLATE_BASE
+                    } else {
+                        KEYBOARD_TRANSLATE_BASE * KEYBOARD_TRANSLATE_FINE
+                    };
+
+                    comp.origin += -translate_factor * Vector3::z();
+                    comp.apply();
+                });
+            },
+
+            Key(Key::D, _, Action::Press, mods) => {
+                if drag_state.is_some() {
+                    continue;
+                }
+
+                selection.upgrade().map(|comp| {
+                    let mut comp = comp.borrow_mut();
+                    let translate_factor = if (mods & Modifiers::Shift).is_empty() {
+                        KEYBOARD_TRANSLATE_BASE
+                    } else {
+                        KEYBOARD_TRANSLATE_BASE * KEYBOARD_TRANSLATE_FINE
+                    };
+
+                    comp.origin += -translate_factor * Vector3::x();
+                    comp.apply();
+                });
+            },
+
+            Key(Key::R, _, Action::Press, mods) => {
+                if drag_state.is_some() {
+                    continue;
+                }
+
+                selection.upgrade().map(|comp| {
+                    let mut comp = comp.borrow_mut();
+                    let translate_factor = if (mods & Modifiers::Shift).is_empty() {
+                        KEYBOARD_TRANSLATE_BASE
+                    } else {
+                        KEYBOARD_TRANSLATE_BASE * KEYBOARD_TRANSLATE_FINE
+                    };
+
+                    comp.origin += translate_factor * Vector3::y();
+                    comp.apply();
+                });
+            },
+
+            Key(Key::F, _, Action::Press, mods) => {
+                if drag_state.is_some() {
+                    continue;
+                }
+
+                selection.upgrade().map(|comp| {
+                    let mut comp = comp.borrow_mut();
+                    let translate_factor = if (mods & Modifiers::Shift).is_empty() {
+                        KEYBOARD_TRANSLATE_BASE
+                    } else {
+                        KEYBOARD_TRANSLATE_BASE * KEYBOARD_TRANSLATE_FINE
+                    };
+
+                    comp.origin += -translate_factor * Vector3::y();
+                    comp.apply();
+                });
+            },
+
+            // -- Rotation --
+            // NOTE: rotation is permitted while dragging
+            Key(Key::I, _, Action::Press, mods) => {
+                selection.upgrade().map(|comp| {
+                    let mut comp = comp.borrow_mut();
+                    let rotate_factor = if (mods & Modifiers::Shift).is_empty() {
+                        KEYBOARD_ROTATE_BASE
+                    } else {
+                        KEYBOARD_ROTATE_BASE * KEYBOARD_ROTATE_FINE
+                    };
+
+                    comp.orientation *= UnitQuaternion::from_axis_angle(&Vector3::x_axis(), rotate_factor);
+                    comp.apply();
+                });
+            },
+
+            Key(Key::J, _, Action::Press, mods) => {
+                selection.upgrade().map(|comp| {
+                    let mut comp = comp.borrow_mut();
+                    let rotate_factor = if (mods & Modifiers::Shift).is_empty() {
+                        KEYBOARD_ROTATE_BASE
+                    } else {
+                        KEYBOARD_ROTATE_BASE * KEYBOARD_ROTATE_FINE
+                    };
+
+                    comp.orientation *= UnitQuaternion::from_axis_angle(&Vector3::z_axis(), -rotate_factor);
+                    comp.apply();
+                });
+            },
+
+            Key(Key::K, _, Action::Press, mods) => {
+                selection.upgrade().map(|comp| {
+                    let mut comp = comp.borrow_mut();
+                    let rotate_factor = if (mods & Modifiers::Shift).is_empty() {
+                        KEYBOARD_ROTATE_BASE
+                    } else {
+                        KEYBOARD_ROTATE_BASE * KEYBOARD_ROTATE_FINE
+                    };
+
+                    comp.orientation *= UnitQuaternion::from_axis_angle(&Vector3::x_axis(), -rotate_factor);
+                    comp.apply();
+                });
+            },
+
+            Key(Key::L, _, Action::Press, mods) => {
+                selection.upgrade().map(|comp| {
+                    let mut comp = comp.borrow_mut();
+                    let rotate_factor = if (mods & Modifiers::Shift).is_empty() {
+                        KEYBOARD_ROTATE_BASE
+                    } else {
+                        KEYBOARD_ROTATE_BASE * KEYBOARD_ROTATE_FINE
+                    };
+
+                    comp.orientation *= UnitQuaternion::from_axis_angle(&Vector3::z_axis(), rotate_factor);
+                    comp.apply();
+                });
+            },
+
+            Key(Key::U, _, Action::Press, mods) => {
+                selection.upgrade().map(|comp| {
+                    let mut comp = comp.borrow_mut();
+                    let rotate_factor = if (mods & Modifiers::Shift).is_empty() {
+                        KEYBOARD_ROTATE_BASE
+                    } else {
+                        KEYBOARD_ROTATE_BASE * KEYBOARD_ROTATE_FINE
+                    };
+
+                    comp.orientation *= UnitQuaternion::from_axis_angle(&Vector3::y_axis(), -rotate_factor);
+                    comp.apply();
+                });
+            },
+
+            Key(Key::O, _, Action::Press, mods) => {
+                selection.upgrade().map(|comp| {
+                    let mut comp = comp.borrow_mut();
+                    let rotate_factor = if (mods & Modifiers::Shift).is_empty() {
+                        KEYBOARD_ROTATE_BASE
+                    } else {
+                        KEYBOARD_ROTATE_BASE * KEYBOARD_ROTATE_FINE
+                    };
+
+                    comp.orientation *= UnitQuaternion::from_axis_angle(&Vector3::y_axis(), rotate_factor);
+                    comp.apply();
+                });
+            },
+
             _ => {},
         } }
 
@@ -342,16 +446,14 @@ fn main() -> Result<()> {
                     let p1_vec = p1.coords - comp.origin;
                     let p2_vec = p2.coords - comp.origin;
 
-                    let p1 = Point3 { coords: comp.origin + SELECTION_BBOX_SCALE * p1_vec };
-                    let p2 = Point3 { coords: comp.origin + SELECTION_BBOX_SCALE * p2_vec };
+                    let p1 = Point3::from_coordinates(comp.origin + SELECTION_BBOX_SCALE * p1_vec);
+                    let p2 = Point3::from_coordinates(comp.origin + SELECTION_BBOX_SCALE * p2_vec);
 
                     window.draw_line(&p1, &p2, &Point3::new(1.0, 0.5, 0.5))
                 });
         });
 
         BOX_EDGES.iter().for_each(|(p1, p2)| window.draw_line(p1, p2, &non_collision_color));
-
-//        debug_lines.iter().for_each(|(p1, p2)| window.draw_line(p1, p2, &Point3::new(0.7, 0.7, 1.0)));
 
         drag_state.iter().for_each(|drag_state| {
             selection.upgrade().map(|comp| {
@@ -363,6 +465,23 @@ fn main() -> Result<()> {
 
                 comp.origin = new_origin.coords;
                 comp.apply();
+            });
+        });
+
+        components.iter().for_each(|comp| {
+            use alga::linear::Transformation;
+
+            let comp = comp.borrow();
+
+            let corner_vec = 1.05f32 * (Vector3::new(-0.5, 0.5, -0.5).component_mul(&comp.scale));
+            let corner_vec = comp.orientation.transform_vector(&corner_vec) + comp.origin;
+
+            let box_scale = 0.01 * comp.scale.norm();
+            BOX_EDGES.iter().for_each(|(p1, p2)| {
+                let p1 = Point3::from_coordinates(box_scale * p1.coords + corner_vec);
+                let p2 = Point3::from_coordinates(box_scale * p2.coords + corner_vec);
+
+                window.draw_line(&p1, &p2, &Point3::new(0.0, 1.0, 1.0));
             });
         });
     }

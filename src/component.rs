@@ -42,19 +42,16 @@ impl Component {
         }
     }
 
-    #[inline]
-    pub fn handle(&self) -> usize {
-        self.uid
-    }
-
     pub fn edges(&self) -> Vec<(Point3<f32>, Point3<f32>)> {
+        use alga::linear::Transformation;
         use BOX_EDGES;
 
         BOX_EDGES.iter()
             .map(|(a, b)| {
-                let a = Point3::from_coordinates(a.coords.component_mul(&self.scale) + self.origin);
-                let b = Point3::from_coordinates(b.coords.component_mul(&self.scale) + self.origin);
-                (a, b)
+                let a = self.orientation.transform_vector(&a.coords.component_mul(&self.scale)) + self.origin;
+                let b = self.orientation.transform_vector(&b.coords.component_mul(&self.scale)) + self.origin;
+
+                (Point3::from_coordinates(a), Point3::from_coordinates(b))
             })
             .collect()
     }
