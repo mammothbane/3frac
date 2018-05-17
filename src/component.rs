@@ -46,17 +46,6 @@ impl Component {
         }
     }
 
-    pub fn edges(&self) -> Vec<(Point3<f32>, Point3<f32>)> {
-        use alga::linear::Transformation;
-        use BOX_EDGES;
-
-        let transform = self.transform();
-
-        BOX_EDGES.iter()
-            .map(|(a, b)| (transform.transform_point(a), transform.transform_point(b)))
-            .collect()
-    }
-
     pub fn apply(&mut self) {
         use palette::{LinSrgb, Blend};
 
