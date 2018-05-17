@@ -24,9 +24,11 @@ use na::{
     Point3,
     Vector2,
     Point2,
+    Isometry3,
 };
 
-use nc::query::Ray3;
+use nc::query::{Ray3, RayCast};
+
 use alga::linear::Transformation;
 use glfw::{MouseButtonMiddle, MouseButtonRight, MouseButtonLeft, Action};
 
@@ -98,60 +100,9 @@ fn run() -> Result<()> {
         use glfw::WindowEvent::*;
         use glfw::Key;
 
-        for ref mut evt in window.events().iter() { match evt.value {
-            ref evt @ Scroll(_, _) => {
-                camera.handle_event(window.glfw_window(), &evt)
-            },
+        // -- mouse ray collision --
 
-            CursorPos(x, y) => {
-                drag_state.iter().for_each(|ref drag_state| {
-                    selection.upgrade().map(|comp| {
-                        let (pos, dir) =
-                            camera.unproject(&Point2::new(x as f32, y as f32), &Vector2::new(window.width(), window.height()));
-
-                        let comp = comp.borrow_mut();
-
-                        let camera_rel = comp.origin - camera.eye().coords;
-                    });
-                });
-            },
-
-            MouseButton(MouseButtonLeft, Action::Release, _) => {
-                drag_state = None;
-            },
-
-            Key(Key::Escape, _, Action::Press, _) => {
-                // todo: inhibit event
-                selection = Weak::new();
-            },
-
-            Key(Key::N, _, Action::Press, _) => {
-                let (x, y) = window.glfw_window().get_cursor_pos();
-
-                let (loc, dir) = camera.unproject(
-                    &Point2::new(x as f32, y as f32),
-                    &Vector2::new(window.width(), window.height())
-                );
-
-                // ray-plane intersection
-                // place the new cube on a plane intersecting the origin and normal to the
-                // camera direction
-                let plane_normal = camera.at() - camera.eye();
-                let t = -(loc.coords.dot(&plane_normal)) / dir.dot(&plane_normal);
-                let intersect = loc + t * dir;
-
-                let mut new_component = Component::new(&mut window);
-                new_component.origin = intersect.coords;
-                new_component.apply();
-
-                components.push(Rc::new(RefCell::new(new_component)));
-            },
-
-            _ => {},
-        } }
-
-        use nc::query::RayCast;
-
+        use std::cmp::Ordering;
         let (x, y) = window.glfw_window().get_cursor_pos();
 
         let (loc, dir) = camera.unproject(
@@ -161,37 +112,33 @@ fn run() -> Result<()> {
 
         let ray = Ray3::new(loc, dir);
 
-        use std::cmp::Ordering;
-        let toi = components.iter()
+        let ray_intersect = components.iter()
             .enumerate()
             .filter_map(|(idx, comp)| {
                 let comp = comp.borrow();
                 comp.cuboid().toi_with_ray(&comp.cuboid_transform(), &ray, true).map(|x| (idx, x))
             })
-            .min_by(|x, y| x.1.partial_cmp(&y.1).unwrap_or(Ordering::Less));
+            .min_by(|x, y| x.1.partial_cmp(&y.1).unwrap_or(Ordering::Less))
+            .map(|(idx, toi)| (Rc::downgrade(&components[idx]), loc + toi * dir));
 
-        match toi {
-            Some((idx, toi)) => {
-                let mut comp = components[idx].borrow_mut();
-                comp.color = collision_color.coords.clone();
-                comp.apply();
+        match ray_intersect {
+            Some((ref comp, _)) => {
+                let mut comp = comp.upgrade().expect("failed to upgrade newly-created Weak");
+                {
+                    let mut comp = comp.borrow_mut();
 
-                if window.glfw_window().get_mouse_button(MouseButtonLeft) == Action::Press {
-                    selection = Rc::downgrade(&components[idx]);
-
-                    drag_state = Some(DragState {
-                        origin_orientation: comp.orientation,
-                        local_handle_offset: (loc + dir * toi).coords - comp.origin,
-                        camera_dist: (camera.eye().coords - comp.origin).norm(),
-                    });
+                    comp.color = collision_color.coords.clone();
+                    comp.apply();
                 }
 
-                for i in 0..components.len() {
-                    if i == idx {
+                let comp_base = comp.borrow();
+
+                for ref comp in components.iter() {
+                    if *comp.borrow() == *comp_base {
                         continue;
                     }
 
-                    let mut comp = components[i].borrow_mut();
+                    let mut comp = comp.borrow_mut();
 
                     comp.color = non_collision_color.coords.clone();
                     comp.apply();
@@ -204,12 +151,88 @@ fn run() -> Result<()> {
                     comp.color = non_collision_color.coords.clone();
                     comp.apply();
                 });
-
-                if window.glfw_window().get_mouse_button(MouseButtonLeft) == Action::Press {
-                    selection = Weak::new();
-                }
             },
         }
+
+        for ref mut evt in window.events().iter() { match evt.value {
+            ref evt @ Scroll(_, _) => {
+                camera.handle_event(window.glfw_window(), &evt)
+            },
+
+            CursorPos(x, y) => {
+                let window_height = window.height();
+                let window_width = window.width();
+                drag_state.iter().for_each(|ref drag_state| {
+                    selection.upgrade().map(|comp| {
+                        let (pos, dir) =
+                            camera.unproject(&Point2::new(x as f32, y as f32), &Vector2::new(window_width, window_height));
+
+                        let comp = comp.borrow_mut();
+
+                        let camera_rel = comp.origin - camera.eye().coords;
+                    });
+                });
+            },
+
+            MouseButton(MouseButtonLeft, Action::Press, _) => {
+                match ray_intersect {
+                    Some((ref comp, ref intersect)) => {
+                        selection = comp.clone();
+
+                        comp.upgrade().iter().for_each(|comp| {
+                            let comp = comp.borrow();
+
+                            drag_state = Some(DragState {
+                                origin_orientation: comp.orientation,
+                                local_handle_offset: intersect.coords - comp.origin,
+                                camera_dist: (camera.eye().coords - comp.origin).norm(),
+                            });
+                        });
+                    },
+
+                    None => {
+                        selection = Weak::new();
+                    },
+                }
+            },
+
+            MouseButton(MouseButtonLeft, Action::Release, _) => {
+                drag_state = None;
+            },
+
+            Key(Key::Escape, _, Action::Press, _) => {
+                // todo: inhibit event
+                selection = Weak::new();
+            },
+
+            Key(Key::N, _, Action::Press, _) => {
+                use nc::shape::Plane3;
+                use na::Unit;
+
+                let (x, y) = window.glfw_window().get_cursor_pos();
+
+                let (loc, dir) = camera.unproject(
+                    &Point2::new(x as f32, y as f32),
+                    &Vector2::new(window.width(), window.height())
+                );
+
+                let ray = Ray3::new(loc, dir);
+
+                let plane = Plane3::new(Unit::new_normalize( camera.eye() - camera.at()));
+                let toi = plane.toi_with_ray(&Isometry3::identity(), &ray, true)
+                    .expect("no intersection between mouse ray and camera plane (should, practically speaking, be impossible)");
+
+                let intersect = loc + toi * dir;
+
+                let mut new_component = Component::new(&mut window);
+                new_component.origin = intersect.coords;
+                new_component.apply();
+
+                components.push(Rc::new(RefCell::new(new_component)));
+            },
+
+            _ => {},
+        } }
 
         selection.upgrade().map(|comp| {
             comp.borrow().edges().iter()
@@ -228,7 +251,15 @@ fn run() -> Result<()> {
                 let rotation = comp.orientation / drag_state.origin_orientation;
                 let terminus = origin + rotation.transform_vector(&drag_state.local_handle_offset);
 
-                window.draw_line(&origin, &terminus, &Point3::new(0.7, 0.7, 1.0));
+                let drag_handle = origin + drag_state.local_handle_offset;
+//                window.draw_line(&origin, &terminus, &Point3::new(0.7, 0.7, 1.0));
+//                window.draw_line(&origin, &Point3::origin(), &Point3::new(0.7, 0.7, 1.0));
+//                window.draw_line(&Point3::origin(), &Point3{ coords: drag_state.local_handle_offset }, &Point3::new(0.7, 0.7, 1.0));
+                window.draw_line(&Point3::origin(), &drag_handle, &Point3::new(0.7, 0.7, 1.0));
+
+//                window.draw_point(&drag)
+//                window.draw_point(&terminus, &Point3::new(0.7, 0.7, 1.0));
+                window
             });
         });
     }

@@ -1,4 +1,5 @@
 use std::cmp::{Eq, PartialEq};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use na::{
     UnitQuaternion,
@@ -15,15 +16,16 @@ use kiss3d::{
     scene::SceneNode,
 };
 
-#[derive(Clone)]
-pub struct Component {
+pub struct Component { // Component isn't Clone because we need SceneNodes
     pub origin: Vector3<f32>,
     pub orientation: UnitQuaternion<f32>,
     pub scale: Vector3<f32>,
     pub color: Vector3<f32>,
     pub scene_node: SceneNode,
+    uid: usize,
 }
 
+static UID_CTR: AtomicUsize = AtomicUsize::new(0);
 
 impl Component {
     // don't want to impl Default because we want to always have the scene_node captured
@@ -36,7 +38,13 @@ impl Component {
             scale,
             color: Vector3::new(1.0, 1.0, 1.0),
             scene_node: window.add_cube(scale[0], scale[1], scale[2]),
+            uid: UID_CTR.fetch_add(1, Ordering::Relaxed),
         }
+    }
+
+    #[inline]
+    pub fn handle(&self) -> usize {
+        self.uid
     }
 
     pub fn edges(&self) -> Vec<(Point3<f32>, Point3<f32>)> {
@@ -68,15 +76,14 @@ impl Component {
 }
 
 impl PartialEq<Component> for Component {
+    #[inline]
     fn eq(&self, other: &Component) -> bool {
-        self.origin == other.origin &&
-            self.orientation == other.orientation &&
-            self.scale == other.scale &&
-            self.color == other.color
+        self.uid == other.uid
     }
 
+    #[inline]
     fn ne(&self, other: &Component) -> bool {
-        !self.eq(other)
+        self.uid != other.uid
     }
 }
 
