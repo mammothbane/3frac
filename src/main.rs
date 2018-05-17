@@ -63,9 +63,10 @@ lazy_static! {
 
 const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 const NAME: &'static str = env!("CARGO_PKG_NAME");
+const SELECTION_BBOX_SCALE: f32 = 1.1;
 
 
-fn run() -> Result<()> {
+fn main() -> Result<()> {
     #[cfg(debug_assertions)]
     let mut window = Window::new(&format!("{} {} (dev)", NAME, VERSION));
 
@@ -102,28 +103,35 @@ fn run() -> Result<()> {
 
         // -- mouse ray collision --
 
-        use std::cmp::Ordering;
-        let (x, y) = window.glfw_window().get_cursor_pos();
+        fn project_mouse(window: &Window, camera: &ArcBall) -> Ray3<f32> {
+            let (x, y) = window.glfw_window().get_cursor_pos();
 
-        let (loc, dir) = camera.unproject(
-            &Point2::new(x as f32, y as f32),
-            &Vector2::new(window.width(), window.height())
-        );
+            let (loc, dir) = camera.unproject(
+                &Point2::new(x as f32, y as f32),
+                &Vector2::new(window.width(), window.height())
+            );
 
-        let ray = Ray3::new(loc, dir);
+            Ray3::new(loc, dir)
+        }
 
-        let ray_intersect = components.iter()
-            .enumerate()
-            .filter_map(|(idx, comp)| {
-                let comp = comp.borrow();
-                comp.cuboid().toi_with_ray(&comp.cuboid_transform(), &ray, true).map(|x| (idx, x))
-            })
-            .min_by(|x, y| x.1.partial_cmp(&y.1).unwrap_or(Ordering::Less))
-            .map(|(idx, toi)| (Rc::downgrade(&components[idx]), loc + toi * dir));
+        let mouse_projection = project_mouse(&window, &camera);
+
+        let ray_intersect = {
+            use std::cmp::Ordering;
+
+            components.iter()
+                .enumerate()
+                .filter_map(|(idx, comp)| {
+                    let comp = comp.borrow();
+                    comp.cuboid().toi_with_ray(&comp.cuboid_transform(), &mouse_projection, true).map(|x| (idx, x))
+                })
+                .min_by(|x, y| x.1.partial_cmp(&y.1).unwrap_or(Ordering::Less))
+                .map(|(idx, toi)| (Rc::downgrade(&components[idx]), mouse_projection.origin + toi * mouse_projection.dir))
+        };
 
         match ray_intersect {
             Some((ref comp, _)) => {
-                let mut comp = comp.upgrade().expect("failed to upgrade newly-created Weak");
+                let comp = comp.upgrade().expect("failed to upgrade newly-created Weak");
                 {
                     let mut comp = comp.borrow_mut();
 
@@ -159,21 +167,6 @@ fn run() -> Result<()> {
                 camera.handle_event(window.glfw_window(), &evt)
             },
 
-            CursorPos(x, y) => {
-                let window_height = window.height();
-                let window_width = window.width();
-                drag_state.iter().for_each(|ref drag_state| {
-                    selection.upgrade().map(|comp| {
-                        let (pos, dir) =
-                            camera.unproject(&Point2::new(x as f32, y as f32), &Vector2::new(window_width, window_height));
-
-                        let comp = comp.borrow_mut();
-
-                        let camera_rel = comp.origin - camera.eye().coords;
-                    });
-                });
-            },
-
             MouseButton(MouseButtonLeft, Action::Press, _) => {
                 match ray_intersect {
                     Some((ref comp, ref intersect)) => {
@@ -185,7 +178,7 @@ fn run() -> Result<()> {
                             drag_state = Some(DragState {
                                 origin_orientation: comp.orientation,
                                 local_handle_offset: intersect.coords - comp.origin,
-                                camera_dist: (camera.eye().coords - comp.origin).norm(),
+                                camera_dist: (camera.eye().coords - intersect.coords).norm(),
                             });
                         });
                     },
@@ -201,7 +194,7 @@ fn run() -> Result<()> {
             },
 
             Key(Key::Escape, _, Action::Press, _) => {
-                // todo: inhibit event
+                // TODO: inhibit event
                 selection = Weak::new();
             },
 
@@ -234,9 +227,21 @@ fn run() -> Result<()> {
             _ => {},
         } }
 
+        let mouse_projection = project_mouse(&window, &camera);
+
         selection.upgrade().map(|comp| {
-            comp.borrow().edges().iter()
-                .for_each(|(p1, p2)| window.draw_line(p1, p2, &Point3::new(1.0, 0.5, 0.5)));
+            let comp = comp.borrow();
+
+            comp.edges().iter()
+                .for_each(|(p1, p2)| {
+                    let p1_vec = p1.coords - comp.origin;
+                    let p2_vec = p2.coords - comp.origin;
+
+                    let p1 = Point3 { coords: comp.origin + SELECTION_BBOX_SCALE * p1_vec };
+                    let p2 = Point3 { coords: comp.origin + SELECTION_BBOX_SCALE * p2_vec };
+
+                    window.draw_line(&p1, &p2, &Point3::new(1.0, 0.5, 0.5))
+                });
         });
 
         BOX_EDGES.iter().for_each(|(p1, p2)| window.draw_line(p1, p2, &non_collision_color));
@@ -245,33 +250,17 @@ fn run() -> Result<()> {
 
         drag_state.iter().for_each(|drag_state| {
             selection.upgrade().map(|comp| {
-                let comp = comp.borrow();
+                let mut comp = comp.borrow_mut();
 
-                let origin = Point3 { coords: comp.origin };
                 let rotation = comp.orientation / drag_state.origin_orientation;
-                let terminus = origin + rotation.transform_vector(&drag_state.local_handle_offset);
+                let new_terminus = mouse_projection.origin + drag_state.camera_dist * mouse_projection.dir.normalize();
+                let new_origin = new_terminus - rotation.transform_vector(&drag_state.local_handle_offset);
 
-                let drag_handle = origin + drag_state.local_handle_offset;
-//                window.draw_line(&origin, &terminus, &Point3::new(0.7, 0.7, 1.0));
-//                window.draw_line(&origin, &Point3::origin(), &Point3::new(0.7, 0.7, 1.0));
-//                window.draw_line(&Point3::origin(), &Point3{ coords: drag_state.local_handle_offset }, &Point3::new(0.7, 0.7, 1.0));
-                window.draw_line(&Point3::origin(), &drag_handle, &Point3::new(0.7, 0.7, 1.0));
-
-//                window.draw_point(&drag)
-//                window.draw_point(&terminus, &Point3::new(0.7, 0.7, 1.0));
-                window
+                comp.origin = new_origin.coords;
+                comp.apply();
             });
         });
     }
 
     Ok(())
-}
-
-fn main() {
-    match run() {
-        Ok(_) => {},
-        Err(e) => {
-            println!("error: {}", e);
-        },
-    }
 }
