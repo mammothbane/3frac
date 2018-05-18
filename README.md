@@ -22,13 +22,13 @@ and `L` are roll, `U` and `O` are yaw. Holding `Shift` also makes these adjustme
 Press `Backspace` to reset the orientation of the selected transformation.
 
 ### Scaling
-Hold `X`, `Y`, or `Z` to scale the selected box in the given dimension. Hold `Shift` to make this 
-adjustment finer. `B` scales all dimensions at once.
+Hold `X`, `Y`, or `Z` and scroll to scale the selected box in the given dimension. Hold `Shift` to make
+this adjustment finer. `B` scales all dimensions at once.
 
 Note: flips are not supported yet.
 
 ## Color
-Hold `C` to change the hue of the selected box. `Shift` makes this adjustment finer.
+Hold `C` and scroll to change the hue of the selected box. `Shift` makes this adjustment finer.
 
 ## Fractal iteration
 Use the left and right arrow keys to control fractal iteration depth.
