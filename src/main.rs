@@ -1,3 +1,5 @@
+#![feature(vec_remove_item)]
+
 extern crate kiss3d;
 extern crate nalgebra as na;
 extern crate ncollide as nc;
@@ -82,6 +84,8 @@ const SCALE_ADJUST_FINE: f32 = 0.25;
 const COLOR_ADJUST_BASE: f32 = 2.0;
 const COLOR_ADJUST_FINE: f32 = 0.25;
 
+const MAX_CUBES: usize = 25_000;
+
 fn main() -> Result<()> {
     #[cfg(debug_assertions)]
     let mut window = Window::new_with_size(&format!("{} {} (dev)", NAME, VERSION), 1400, 800);
@@ -98,6 +102,8 @@ fn main() -> Result<()> {
     window.set_light(Light::StickToCamera);
     window.set_framerate_limit(Some(70));
 
+    let mut root_group = window.add_group();
+    let mut iterated_group = window.add_group();
     let mut components = Vec::<Rc<RefCell<Component>>>::new();
     let mut selection: Weak<RefCell<Component>> = Weak::new();
 
@@ -109,6 +115,8 @@ fn main() -> Result<()> {
     }
 
     let mut drag_state: Option<DragState> = None;
+
+    let mut iteration_depth: usize = 0;
 
     while window.render_with_camera(&mut camera) {
         use glfw::WindowEvent::*;
@@ -141,6 +149,8 @@ fn main() -> Result<()> {
                 .map(|(idx, toi)| (Rc::downgrade(&components[idx]), mouse_projection.origin + toi * mouse_projection.dir))
         };
 
+        let mut render_dirty = false;
+        
         match ray_intersect {
             Some((ref comp, _)) => {
                 let comp = comp.upgrade().expect("failed to upgrade newly-created Weak");
@@ -195,6 +205,7 @@ fn main() -> Result<()> {
             },
 
             MouseButton(MouseButtonLeft, Action::Release, _) => {
+                render_dirty = true;
                 drag_state = None;
             },
 
@@ -214,6 +225,8 @@ fn main() -> Result<()> {
                     } else {
                         SCALE_ADJUST_BASE
                     };
+                    
+                    render_dirty = true;
 
                     if glfw_window.get_key(Key::B) == Action::Press {
                         comp.scale[0] = 0.0f32.max(comp.scale[0] + adjustment * offset);
@@ -247,11 +260,28 @@ fn main() -> Result<()> {
                         comp.color = Vector3::new(color.red, color.green, color.blue);
                         comp.apply();
                     } else {
+                        render_dirty = false;
+                        
                         camera.handle_event(window.glfw_window(), &Scroll(unused, -(offset as f64)));
                     }
                 } else {
                     camera.handle_event(window.glfw_window(), &Scroll(unused, -offset));
                 }
+            },
+            
+            Key(Key::Right, _, Action::Press, _) => {
+                iteration_depth += 1;
+
+                render_dirty = true;
+            },
+            
+            Key(Key::Left, _, Action::Press, _) => {
+                if iteration_depth == 0 {
+                    continue;
+                }
+
+                iteration_depth -= 1;
+                render_dirty = true;
             },
 
             Key(Key::Escape, _, action, _) => {
@@ -282,7 +312,7 @@ fn main() -> Result<()> {
 
                 let intersect = loc + toi * dir;
 
-                let mut new_component = Component::new(&mut window);
+                let mut new_component = Component::new(&mut root_group);
                 new_component.origin = intersect.coords;
                 if !(mods & Modifiers::Shift).is_empty() {
                     new_component.scale *= 2.0;
@@ -291,12 +321,22 @@ fn main() -> Result<()> {
                 new_component.apply();
 
                 components.push(Rc::new(RefCell::new(new_component)));
+                
+                render_dirty = true;
             },
 
-            // reset box orientation
-            Key(Key::Backspace, _, Action::Press, _) => {
+            Key(Key::Backspace, _, Action::Press, mods) => {
                 selection.upgrade().map(|comp| {
-                    comp.borrow_mut().orientation = UnitQuaternion::identity();
+                    if (mods & Modifiers::Shift).is_empty() {  // reset box orientation
+                        comp.borrow_mut().orientation = UnitQuaternion::identity();                
+                    } else {
+                        let idx = components.iter().position(|c| *c.borrow() == *comp.borrow()).expect("selection didn't exist in vec");
+                        let comp = components.swap_remove(idx);
+
+                        {
+                            comp.borrow_mut().scene_node.unlink();
+                        }
+                    }
                 });
             },
 
@@ -313,6 +353,8 @@ fn main() -> Result<()> {
                     } else {
                         TRANSLATE_ADJUST_BASE * TRANSLATE_ADJUST_FINE
                     };
+
+                    render_dirty = true;
 
                     comp.origin += translate_factor * Vector3::z();
                     comp.apply();
@@ -332,6 +374,8 @@ fn main() -> Result<()> {
                         TRANSLATE_ADJUST_BASE * TRANSLATE_ADJUST_FINE
                     };
 
+                    render_dirty = true;
+
                     comp.origin += translate_factor * Vector3::x();
                     comp.apply();
                 });
@@ -349,6 +393,8 @@ fn main() -> Result<()> {
                     } else {
                         TRANSLATE_ADJUST_BASE * TRANSLATE_ADJUST_FINE
                     };
+
+                    render_dirty = true;
 
                     comp.origin += -translate_factor * Vector3::z();
                     comp.apply();
@@ -368,6 +414,8 @@ fn main() -> Result<()> {
                         TRANSLATE_ADJUST_BASE * TRANSLATE_ADJUST_FINE
                     };
 
+                    render_dirty = true;
+
                     comp.origin += -translate_factor * Vector3::x();
                     comp.apply();
                 });
@@ -385,6 +433,8 @@ fn main() -> Result<()> {
                     } else {
                         TRANSLATE_ADJUST_BASE * TRANSLATE_ADJUST_FINE
                     };
+
+                    render_dirty = true;
 
                     comp.origin += translate_factor * Vector3::y();
                     comp.apply();
@@ -404,6 +454,8 @@ fn main() -> Result<()> {
                         TRANSLATE_ADJUST_BASE * TRANSLATE_ADJUST_FINE
                     };
 
+                    render_dirty = true;
+
                     comp.origin += -translate_factor * Vector3::y();
                     comp.apply();
                 });
@@ -420,6 +472,8 @@ fn main() -> Result<()> {
                         ROTATE_ADJUST_BASE * ROTATE_ADJUST_FINE
                     };
 
+                    render_dirty = true;
+
                     comp.orientation *= UnitQuaternion::from_axis_angle(&Vector3::x_axis(), rotate_factor);
                     comp.apply();
                 });
@@ -433,6 +487,8 @@ fn main() -> Result<()> {
                     } else {
                         ROTATE_ADJUST_BASE * ROTATE_ADJUST_FINE
                     };
+
+                    render_dirty = true;
 
                     comp.orientation *= UnitQuaternion::from_axis_angle(&Vector3::z_axis(), -rotate_factor);
                     comp.apply();
@@ -448,6 +504,8 @@ fn main() -> Result<()> {
                         ROTATE_ADJUST_BASE * ROTATE_ADJUST_FINE
                     };
 
+                    render_dirty = true;
+                    
                     comp.orientation *= UnitQuaternion::from_axis_angle(&Vector3::x_axis(), -rotate_factor);
                     comp.apply();
                 });
@@ -462,6 +520,8 @@ fn main() -> Result<()> {
                         ROTATE_ADJUST_BASE * ROTATE_ADJUST_FINE
                     };
 
+                    render_dirty = true;
+
                     comp.orientation *= UnitQuaternion::from_axis_angle(&Vector3::z_axis(), rotate_factor);
                     comp.apply();
                 });
@@ -475,6 +535,8 @@ fn main() -> Result<()> {
                     } else {
                         ROTATE_ADJUST_BASE * ROTATE_ADJUST_FINE
                     };
+                    
+                    render_dirty = true;
 
                     comp.orientation *= UnitQuaternion::from_axis_angle(&Vector3::y_axis(), -rotate_factor);
                     comp.apply();
@@ -489,6 +551,8 @@ fn main() -> Result<()> {
                     } else {
                         ROTATE_ADJUST_BASE * ROTATE_ADJUST_FINE
                     };
+
+                    render_dirty = true;
 
                     comp.orientation *= UnitQuaternion::from_axis_angle(&Vector3::y_axis(), rotate_factor);
                     comp.apply();
@@ -519,7 +583,12 @@ fn main() -> Result<()> {
             let text = format!("selected transform (matrix representation)\n{}", matrix_fmt);
             window.draw_text(&text, &Point2::new(10.0, 10.0), &roboto_font, &Point3::new(0.9, 0.9, 0.9));
 
-            let scale = Matrix4::new_scaling(SELECTION_BBOX_SCALE) * Matrix4::new_nonuniform_scaling(&comp.scale);
+            let scale = if iteration_depth > 0 {
+                Matrix4::new_nonuniform_scaling(&comp.scale)
+            } else {
+                Matrix4::new_scaling(SELECTION_BBOX_SCALE) * Matrix4::new_nonuniform_scaling(&comp.scale)
+            };
+
             let transform = comp.isometric_part().to_homogeneous() * scale;
 
             BOX_EDGES.iter()
@@ -559,7 +628,76 @@ fn main() -> Result<()> {
 
                 window.draw_line(&p1, &p2, &Point3::new(0.0, 1.0, 1.0));
             });
+
+            if iteration_depth > 0 {
+                if selection.upgrade().map_or(false, |x| *x.borrow() == *comp) {
+                    return;
+                }
+
+                let transform = comp.transform();
+
+                BOX_EDGES.iter().for_each(|(p1, p2)| {
+                    window.draw_line(&transform.transform_point(&p1), &transform.transform_point(&p2), &Point3::new(0.5, 0.5, 0.9))
+                });
+            }
         });
+
+        let pos = Point2::new(window.width() * 2.0 - 300.0, window.height() * 2.0 - 165.0);
+        window.draw_text(&format!("iterations: {}", iteration_depth), &pos, &roboto_font, &Point3::new(0.9, 0.9, 0.9));
+
+        let cube_count = components.len().pow(iteration_depth as u32 + 1);
+        window.draw_text(&format!("cubes: {}", cube_count), &Point2::new(pos[0], pos[1] + 75.0), &roboto_font, &Point3::new(0.9, 0.9, 0.9));
+
+        if !render_dirty {
+            continue;
+        }
+
+        if cube_count > MAX_CUBES {
+            // render with points
+            continue;
+        }
+
+        if iteration_depth == 0 {
+            iterated_group.set_visible(false);
+            iterated_group.unlink();
+            iterated_group = window.add_group();
+            
+            root_group.set_visible(true);
+            
+            continue;
+        }
+
+        root_group.set_visible(false);
+        iterated_group.unlink();
+        iterated_group = window.add_group();
+
+        use itertools::Itertools;
+        use na::{Matrix4, Rotation3};
+
+        let transforms = components.iter().map(|c| c.borrow().transform().to_homogeneous());
+        (0..iteration_depth + 1)
+            .map(|_| transforms.clone())
+            .multi_cartesian_product()
+            .map(|tsfm| tsfm.iter().fold(Matrix4::identity(), |acc, x| acc * x))
+            .for_each(|tsfm| {
+                let translation = na::Translation3::from_vector(tsfm.fixed_slice::<na::U3, na::U1>(0, 3).into_owned());
+                
+                let linear_matrix = tsfm.fixed_slice::<na::U3, na::U3>(0, 0).into_owned();
+                let scale = Vector3::new(linear_matrix.fixed_rows::<na::U1>(0).norm(), linear_matrix.fixed_rows::<na::U1>(1).norm(), linear_matrix.fixed_rows::<na::U1>(2).norm());
+                
+                let mut rotation = linear_matrix;
+                rotation.fixed_columns_mut::<na::U1>(0).apply(|x| x / scale[0]); 
+                rotation.fixed_columns_mut::<na::U1>(1).apply(|x| x / scale[1]); 
+                rotation.fixed_columns_mut::<na::U1>(2).apply(|x| x / scale[2]); 
+
+                let rotation = Rotation3::from_matrix_unchecked(rotation);
+                let rotation = UnitQuaternion::from_rotation_matrix(&rotation);
+
+                let iso = Isometry3::from_parts(translation, rotation);
+
+                let mut node = iterated_group.add_cube(scale[0], scale[1], scale[2]);
+                node.set_local_transformation(iso);
+            })
     }
 
     Ok(())

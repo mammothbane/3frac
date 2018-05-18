@@ -5,7 +5,6 @@ use na::{
     UnitQuaternion,
     Vector3,
     Translation3,
-    Point3,
     Transform3,
     Matrix4,
     Isometry3,
@@ -13,10 +12,7 @@ use na::{
 
 use nc::shape::Cuboid3;
 
-use kiss3d::{
-    window::Window,
-    scene::SceneNode,
-};
+use kiss3d::scene::SceneNode;
 
 pub struct Component { // Component isn't Clone because we need SceneNodes
     pub origin: Vector3<f32>,
@@ -32,7 +28,7 @@ static UID_CTR: AtomicUsize = AtomicUsize::new(0);
 
 impl Component {
     // don't want to impl Default because we want to always have the scene_node captured
-    pub fn new(window: &mut Window) -> Self {
+    pub fn new(parent: &mut SceneNode) -> Self {
         let scale = Vector3::new(0.5, 0.5, 0.5);
 
         Component {
@@ -40,7 +36,7 @@ impl Component {
             orientation: UnitQuaternion::identity(),
             scale,
             color: Vector3::new(0.5, 1.0, 0.5),
-            scene_node: window.add_cube(scale[0], scale[1], scale[2]),
+            scene_node: parent.add_cube(scale[0], scale[1], scale[2]),
             uid: UID_CTR.fetch_add(1, Ordering::Relaxed),
             hovered: false,
         }
@@ -73,7 +69,7 @@ impl Component {
     }
 
     pub fn transform(&self) -> Transform3<f32> {
-         Transform3::from_matrix_unchecked( self.isometric_part().to_homogeneous() * Matrix4::new_nonuniform_scaling(&self.scale))
+        Transform3::from_matrix_unchecked(self.isometric_part().to_homogeneous() * Matrix4::new_nonuniform_scaling(&self.scale))
     }
 }
 

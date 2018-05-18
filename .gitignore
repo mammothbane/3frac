@@ -4,3 +4,4 @@ Cargo.lock
 /*.dll
 /*.lib
 .vs
+rls
