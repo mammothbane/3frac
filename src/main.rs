@@ -101,6 +101,7 @@ fn main() -> Result<()> {
 
     window.set_light(Light::StickToCamera);
     window.set_framerate_limit(Some(70));
+    window.set_background_color(0.1, 0.1, 0.1);
 
     let mut root_group = window.add_group();
     let mut iterated_group = window.add_group();
@@ -672,14 +673,36 @@ fn main() -> Result<()> {
         iterated_group = window.add_group();
 
         use itertools::Itertools;
-        use na::{Matrix4, Rotation3};
+        use na::{Rotation3, Matrix4};
+        use palette::{LinSrgb, Blend};
 
         let transforms = components.iter().map(|c| c.borrow().transform().to_homogeneous());
-        (0..iteration_depth + 1)
+
+        let colors = components.iter().map(|c| {
+            let c = c.borrow();
+            LinSrgb::new(c.color[0], c.color[1], c.color[2])
+        });
+
+
+        let transforms = (0..iteration_depth + 1)
             .map(|_| transforms.clone())
             .multi_cartesian_product()
-            .map(|tsfm| tsfm.iter().fold(Matrix4::identity(), |acc, x| acc * x))
-            .for_each(|tsfm| {
+            .map(|tsfm| tsfm.iter().product());
+
+        let colors = (0..iteration_depth + 1)
+            .map(|_| colors.clone())
+            .multi_cartesian_product()
+            .map(|colors| {
+                let mut iter = colors.iter();
+                let first = iter.next().expect("no first element in iterator");
+
+                let result = iter.fold(*first, |acc, x| acc.multiply(*x));
+
+                Vector3::new(result.red, result.green, result.blue)
+            });
+
+        transforms.zip(colors)
+            .for_each(|(tsfm, color): (Matrix4<f32>, Vector3<f32>)| {
                 let translation = na::Translation3::from_vector(tsfm.fixed_slice::<na::U3, na::U1>(0, 3).into_owned());
                 
                 let linear_matrix = tsfm.fixed_slice::<na::U3, na::U3>(0, 0).into_owned();
@@ -697,6 +720,7 @@ fn main() -> Result<()> {
 
                 let mut node = iterated_group.add_cube(scale[0], scale[1], scale[2]);
                 node.set_local_transformation(iso);
+                node.set_color(color[0], color[1], color[2]);
             })
     }
 
