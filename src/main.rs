@@ -120,6 +120,8 @@ fn main() -> Result<()> {
     let mut iteration_depth: usize = 0;
     let mut wireframes_on = true;
 
+    let mut point_set: Vec<(Point3<f32>, Point3<f32>)> = Vec::new();
+
     while window.render_with_camera(&mut camera) {
         use glfw::WindowEvent::*;
         use glfw::{Key, Modifiers};
@@ -329,6 +331,8 @@ fn main() -> Result<()> {
 
             Key(Key::Backspace, _, Action::Press, mods) => {
                 selection.upgrade().map(|comp| {
+                    render_dirty = true;
+
                     if (mods & Modifiers::Shift).is_empty() {  // reset box orientation
                         comp.borrow_mut().orientation = UnitQuaternion::identity();                
                     } else {
@@ -658,12 +662,9 @@ fn main() -> Result<()> {
         let cube_count = components.len().pow(iteration_depth as u32 + 1);
         window.draw_text(&format!("cubes: {}", cube_count), &Point2::new(pos[0], pos[1] + 75.0), &roboto_font, &Point3::new(0.9, 0.9, 0.9));
 
-        if !render_dirty {
-            continue;
-        }
+        point_set.iter().for_each(|(pt, color)| window.draw_point(pt, color));
 
-        if cube_count > MAX_CUBES {
-            // render with points
+        if !render_dirty {
             continue;
         }
 
@@ -678,8 +679,10 @@ fn main() -> Result<()> {
         }
 
         root_group.set_visible(false);
+        point_set.clear();
         iterated_group.unlink();
         iterated_group = window.add_group();
+        iterated_group.enable_backface_culling(true);
 
         use itertools::Itertools;
         use na::{Rotation3, Matrix4};
@@ -710,8 +713,15 @@ fn main() -> Result<()> {
                 Vector3::new(result.red, result.green, result.blue)
             });
 
+        let origin = Point3::origin();
         transforms.zip(colors)
             .for_each(|(tsfm, color): (Matrix4<f32>, Vector3<f32>)| {
+                if cube_count > MAX_CUBES {
+                    point_set.push((tsfm.transform_point(&origin), Point3::from_coordinates(color)));
+
+                    return;
+                }
+
                 let translation = na::Translation3::from_vector(tsfm.fixed_slice::<na::U3, na::U1>(0, 3).into_owned());
                 
                 let linear_matrix = tsfm.fixed_slice::<na::U3, na::U3>(0, 0).into_owned();
