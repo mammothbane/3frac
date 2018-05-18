@@ -84,7 +84,7 @@ const SCALE_ADJUST_FINE: f32 = 0.25;
 const COLOR_ADJUST_BASE: f32 = 2.0;
 const COLOR_ADJUST_FINE: f32 = 0.25;
 
-const MAX_CUBES: usize = 25_000;
+const MAX_CUBES: usize = 2_000;
 
 fn main() -> Result<()> {
     #[cfg(debug_assertions)]
@@ -118,6 +118,7 @@ fn main() -> Result<()> {
     let mut drag_state: Option<DragState> = None;
 
     let mut iteration_depth: usize = 0;
+    let mut wireframes_on = true;
 
     while window.render_with_camera(&mut camera) {
         use glfw::WindowEvent::*;
@@ -339,6 +340,10 @@ fn main() -> Result<()> {
                         }
                     }
                 });
+            },
+
+            Key(Key::Tab, _, Action::Press, _) => {
+                wireframes_on = !wireframes_on;
             },
 
             // -- Translation --
@@ -592,14 +597,14 @@ fn main() -> Result<()> {
 
             let transform = comp.isometric_part().to_homogeneous() * scale;
 
-            BOX_EDGES.iter()
-                .for_each(|(p1, p2)|
-                    window.draw_line(&transform.transform_point(&p1), &transform.transform_point(&p2), &Point3::new(1.0, 0.5, 0.5))
-                );
+            if wireframes_on {
+                BOX_EDGES.iter()
+                    .for_each(|(p1, p2)|
+                        window.draw_line(&transform.transform_point(&p1), &transform.transform_point(&p2), &Point3::new(1.0, 0.5, 0.5))
+                    );
 
+            }
         });
-
-        BOX_EDGES.iter().for_each(|(p1, p2)| window.draw_line(p1, p2, &Point3::new(1.0, 1.0, 1.0)));
 
         drag_state.iter().for_each(|drag_state| {
             selection.upgrade().map(|comp| {
@@ -614,34 +619,38 @@ fn main() -> Result<()> {
             });
         });
 
-        components.iter().for_each(|comp| {
-            use alga::linear::Transformation;
+        if wireframes_on {
+            BOX_EDGES.iter().for_each(|(p1, p2)| window.draw_line(p1, p2, &Point3::new(1.0, 1.0, 1.0)));
 
-            let comp = comp.borrow();
+            components.iter().for_each(|comp| {
+                use alga::linear::Transformation;
 
-            let corner_vec = 1.05f32 * (Vector3::new(-0.5, 0.5, -0.5).component_mul(&comp.scale));
-            let corner_vec = comp.orientation.transform_vector(&corner_vec) + comp.origin;
+                let comp = comp.borrow();
 
-            let box_scale = 0.01 * comp.scale.norm();
-            BOX_EDGES.iter().for_each(|(p1, p2)| {
-                let p1 = Point3::from_coordinates(box_scale * p1.coords + corner_vec);
-                let p2 = Point3::from_coordinates(box_scale * p2.coords + corner_vec);
+                let corner_vec = 1.05f32 * (Vector3::new(-0.5, 0.5, -0.5).component_mul(&comp.scale));
+                let corner_vec = comp.orientation.transform_vector(&corner_vec) + comp.origin;
 
-                window.draw_line(&p1, &p2, &Point3::new(0.0, 1.0, 1.0));
-            });
-
-            if iteration_depth > 0 {
-                if selection.upgrade().map_or(false, |x| *x.borrow() == *comp) {
-                    return;
-                }
-
-                let transform = comp.transform();
-
+                let box_scale = 0.01 * comp.scale.norm();
                 BOX_EDGES.iter().for_each(|(p1, p2)| {
-                    window.draw_line(&transform.transform_point(&p1), &transform.transform_point(&p2), &Point3::new(0.5, 0.5, 0.9))
+                    let p1 = Point3::from_coordinates(box_scale * p1.coords + corner_vec);
+                    let p2 = Point3::from_coordinates(box_scale * p2.coords + corner_vec);
+
+                    window.draw_line(&p1, &p2, &Point3::new(0.0, 1.0, 1.0));
                 });
-            }
-        });
+
+                if iteration_depth > 0 {
+                    if selection.upgrade().map_or(false, |x| *x.borrow() == *comp) {
+                        return;
+                    }
+
+                    let transform = comp.transform();
+
+                    BOX_EDGES.iter().for_each(|(p1, p2)| {
+                        window.draw_line(&transform.transform_point(&p1), &transform.transform_point(&p2), &Point3::new(0.5, 0.5, 0.9))
+                    });
+                }
+            });
+        }
 
         let pos = Point2::new(window.width() * 2.0 - 300.0, window.height() * 2.0 - 165.0);
         window.draw_text(&format!("iterations: {}", iteration_depth), &pos, &roboto_font, &Point3::new(0.9, 0.9, 0.9));

@@ -8,8 +8,10 @@ and drag to change the camera's center. Press `Enter` to recenter the camera on 
 ## Transformations
 Press `N` to add a new affine map to the scene (represented by a box). `Shift-N` adds a large box.
 
+`Shift-Backspace` deletes the selected transform. 
+
 ### Translation
-Left-click to select the transform, and drag to move it around. The `W`, `A`, `S`, and `D` keys control X/Z 
+Left-click to select a transform, and drag to move it around. The `W`, `A`, `S`, and `D` keys control X/Z 
 translation (`W`/`S` are Z +/-, `A`/`D` are X +/-). `R` and `F` control Y translation. Hold `Shift` while 
 pressing any of these keys to enter fine adjustment mode.
 
@@ -30,3 +32,5 @@ Hold `C` to change the hue of the selected box. `Shift` makes this adjustment fi
 
 ## Fractal iteration
 Use the left and right arrow keys to control fractal iteration depth.
+
+`Tab` toggles wireframes on and off.
