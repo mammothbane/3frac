@@ -686,13 +686,24 @@ fn main() -> Result<()> {
 
         use itertools::Itertools;
         use na::{Rotation3, Matrix4};
-        use palette::{LinSrgb, Blend};
+        use palette::{LinSrgb, RgbHue, Hsl};
 
         let transforms = components.iter().map(|c| c.borrow().transform().to_homogeneous());
 
+        let (lightness, saturation) = {
+            let comp = components[0].borrow();
+
+            let hsl: Hsl<_, _> = LinSrgb::new(comp.color[0], comp.color[1], comp.color[2]).into();
+
+            (hsl.lightness, hsl.saturation)
+        };
+
         let colors = components.iter().map(|c| {
             let c = c.borrow();
-            LinSrgb::new(c.color[0], c.color[1], c.color[2])
+            let hsl: Hsl<_, _> = LinSrgb::new(c.color[0], c.color[1], c.color[2]).into();
+            let hue_angle = hsl.hue.to_positive_radians();
+
+            (hue_angle.sin(), hue_angle.cos())
         });
 
 
@@ -705,12 +716,12 @@ fn main() -> Result<()> {
             .map(|_| colors.clone())
             .multi_cartesian_product()
             .map(|colors| {
-                let mut iter = colors.iter();
-                let first = iter.next().expect("no first element in iterator");
+                let (y, x) = colors.iter().fold((0.0f32, 0.0f32), |(acc1, acc2), (y, x)| (acc1 + y, acc2 + x));
 
-                let result = iter.fold(*first, |acc, x| acc.multiply(*x));
+                let hsl = Hsl::new(RgbHue::from_radians(y.atan2(x)), saturation, lightness);
+                let rgb: LinSrgb<_> = hsl.into();
 
-                Vector3::new(result.red, result.green, result.blue)
+                Vector3::new(rgb.red, rgb.green, rgb.blue)
             });
 
         let origin = Point3::origin();
