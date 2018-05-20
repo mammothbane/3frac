@@ -9,7 +9,7 @@ cargo build --release
 
 cp target/release/3frac build/3frac.app/Contents/MacOS
 
-cat > build/3frac.app/Contents/Info.plis << EOF
+cat > build/3frac.app/Contents/Info.plist << EOF
 {
 	CFBundleName = 3frac;
 	CFBundleDisplayName = 3frac;
