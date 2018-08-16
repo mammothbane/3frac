@@ -1,4 +1,5 @@
 #![feature(vec_remove_item)]
+#![feature(extern_prelude)]
 
 extern crate kiss3d;
 extern crate nalgebra as na;
@@ -39,52 +40,13 @@ use glfw::{MouseButtonMiddle, MouseButtonRight, MouseButtonLeft, Action};
 use self::component::Component;
 
 mod component;
+mod input;
+mod constants;
 
-pub(crate) type Result<T> = std::result::Result<T, failure::Error>;
+pub use self::constants::*;
 
-static ROBOTO_TTF: &'static [u8] = include_bytes!("resources/roboto.ttf");
+pub(crate) type Result<T> = failure::Fallible<T>;
 
-lazy_static! {
-    static ref BOX_EDGES: Vec<(Point3<f32>, Point3<f32>)> = {
-        let points = vec![
-            Point3::new(0.5, 0.5, 0.5),
-            Point3::new(-0.5, 0.5, 0.5),
-            Point3::new(0.5, -0.5, 0.5),
-            Point3::new(0.5, 0.5, -0.5),
-            Point3::new(-0.5, -0.5, 0.5),
-            Point3::new(-0.5, 0.5, -0.5),
-            Point3::new(0.5, -0.5, -0.5),
-            Point3::new(-0.5, -0.5, -0.5),
-        ];
-
-        use itertools::Itertools;
-
-        let lines = points.clone().into_iter().cartesian_product(points.into_iter())
-            .filter(|(p1, p2)| (p1 - p2).norm() == 1.0)  // this is messy
-            .collect();
-
-        lines
-    };
-}
-
-const VERSION: &'static str = env!("CARGO_PKG_VERSION");
-const NAME: &'static str = env!("CARGO_PKG_NAME");
-
-const SELECTION_BBOX_SCALE: f32 = 1.1;
-
-const TRANSLATE_ADJUST_BASE: f32 = 0.1;
-const TRANSLATE_ADJUST_FINE: f32 = 0.1;
-
-const ROTATE_ADJUST_BASE: f32 = (2.0 * std::f32::consts::PI) / 24.0;
-const ROTATE_ADJUST_FINE: f32 = 1.0 / 12.0;
-
-const SCALE_ADJUST_BASE: f32 = 0.06;
-const SCALE_ADJUST_FINE: f32 = 0.25;
-
-const COLOR_ADJUST_BASE: f32 = 2.0;
-const COLOR_ADJUST_FINE: f32 = 0.25;
-
-const MAX_CUBES: usize = 2_000;
 
 fn main() -> Result<()> {
     #[cfg(debug_assertions)]
